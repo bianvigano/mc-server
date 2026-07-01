@@ -35,7 +35,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --type TYPE       Server type: fabric, paper, purpur (required)"
+            echo "  --type TYPE       Server type: bukkit, spigot, paper, purpur, fabric (required)"
             echo "  --version VER     Minecraft version (default: latest)"
             echo "  --dir DIR         Install directory (default: ./<type>-server)"
             echo "  --build NUM       Paper: specific build number"
@@ -62,23 +62,27 @@ if [ -z "$SERVER_TYPE" ]; then
     echo "========================================"
     echo ""
     echo "Pilih server type:"
-    echo "  1) Paper    — Performance + Bukkit/Spigot plugin support"
-    echo "  2) Purpur   — Paper + extra configurability"
-    echo "  3) Fabric   — Mod loader (mods, not plugins)"
+    echo "  1) Bukkit   — Original plugin API (legacy)"
+    echo "  2) Spigot   — Optimized Bukkit (legacy)"
+    echo "  3) Paper    — Performance + Bukkit/Spigot plugin support"
+    echo "  4) Purpur   — Paper + extra configurability"
+    echo "  5) Fabric   — Mod loader (mods, not plugins)"
     echo ""
-    read -rp "Pilih [1/2/3]: " choice
+    read -rp "Pilih [1/2/3/4/5]: " choice
     case "$choice" in
-        1) SERVER_TYPE="paper" ;;
-        2) SERVER_TYPE="purpur" ;;
-        3) SERVER_TYPE="fabric" ;;
+        1) SERVER_TYPE="bukkit" ;;
+        2) SERVER_TYPE="spigot" ;;
+        3) SERVER_TYPE="paper" ;;
+        4) SERVER_TYPE="purpur" ;;
+        5) SERVER_TYPE="fabric" ;;
         *) echo "Invalid choice"; exit 1 ;;
     esac
 fi
 
 # Validate type
 case "$SERVER_TYPE" in
-    paper|purpur|fabric) ;;
-    *) echo "Error: --type must be paper, purpur, or fabric"; exit 1 ;;
+    bukkit|spigot|paper|purpur|fabric) ;;
+    *) echo "Error: --type must be bukkit|spigot|paper|purpur|fabric"; exit 1 ;;
 esac
 
 INSTALL_DIR="${INSTALL_DIR:-./${SERVER_TYPE}-server}"
@@ -110,6 +114,47 @@ accept_eula() {
     else
         echo "eula=true" > eula.txt
     fi
+}
+
+# ═══════════════════════════════════════════════
+#  Download: Bukkit/Spigot (via BuildTools)
+# ═══════════════════════════════════════════════
+download_buildtools() {
+    local PROJECT="$1"  # bukkit or spigot
+    local PROJECT_UPPER="${PROJECT^^}"
+
+    if [ -z "$MC_VERSION" ]; then
+        echo "Error: --version required for $PROJECT_UPPER"
+        echo "  Example: ./setup.sh --type $PROJECT --version 1.21.4"
+        exit 1
+    fi
+
+    if ! command -v git &>/dev/null; then
+        echo "Error: git not found. Install git first."
+        exit 1
+    fi
+
+    echo "[1/3] Downloading BuildTools..."
+    local BUILD_DIR="/tmp/mc-buildtools-$$"
+    mkdir -p "$BUILD_DIR"
+    curl -fsSL -o "$BUILD_DIR/BuildTools.jar" \
+        "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar"
+
+    echo "[2/3] Building $PROJECT_UPPER for MC $MC_VERSION (this takes a while)..."
+    cd "$BUILD_DIR"
+    java -jar BuildTools.jar --rev "$MC_VERSION"
+
+    echo "[3/3] Installing $PROJECT_UPPER jar..."
+    mkdir -p "$INSTALL_DIR"
+
+    if [ "$PROJECT" = "spigot" ]; then
+        cp "$BUILD_DIR/Spigot/Spigot-Target/spigot-${MC_VERSION}.jar" "$INSTALL_DIR/spigot.jar"
+    else
+        cp "$BUILD_DIR/Spigot/Spigot-Target/craftbukkit-${MC_VERSION}.jar" "$INSTALL_DIR/craftbukkit.jar"
+    fi
+
+    rm -rf "$BUILD_DIR"
+    echo "  Installed: $INSTALL_DIR/${PROJECT}.jar"
 }
 
 # ═══════════════════════════════════════════════
@@ -333,6 +378,14 @@ EOF
 detect_java
 
 case "$SERVER_TYPE" in
+    bukkit)
+        download_buildtools bukkit
+        SERVER_JAR="craftbukkit.jar"
+        ;;
+    spigot)
+        download_buildtools spigot
+        SERVER_JAR="spigot.jar"
+        ;;
     paper)
         download_paper
         SERVER_JAR="paper.jar"
