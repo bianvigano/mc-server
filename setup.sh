@@ -266,11 +266,22 @@ print(stable[0]['version'] if stable else data[0]['version'])
 #  Copy scripts to install dir
 # ═══════════════════════════════════════════════
 copy_scripts() {
-    for f in start.sh backup.sh plugins.sh update.sh; do
+    local GITHUB_RAW="https://raw.githubusercontent.com/bianvigano/mc-server/main"
+    local SCRIPTS="start.sh backup.sh plugins.sh update.sh"
+
+    for f in $SCRIPTS; do
         if [ -f "$SETUP_DIR/$f" ]; then
+            # Local file exists, use it
             cp "$SETUP_DIR/$f" "$INSTALL_DIR/$f"
-            chmod +x "$INSTALL_DIR/$f"
+        else
+            # Download from GitHub
+            echo "[*] Downloading $f..."
+            curl -fsSL -o "$INSTALL_DIR/$f" "$GITHUB_RAW/$f" || {
+                echo "[WARN] Failed to download $f"
+                continue
+            }
         fi
+        chmod +x "$INSTALL_DIR/$f"
     done
 }
 
