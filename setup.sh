@@ -91,7 +91,6 @@ if [ -z "$SERVER_TYPE" ]; then
 
         case "$SERVER_TYPE" in
             paper|purpur)
-                local API_URL
                 if [ "$SERVER_TYPE" = "paper" ]; then
                     API_URL="https://fill.papermc.io/v3/projects/paper"
                 else
