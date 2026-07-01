@@ -133,7 +133,9 @@ download_paper() {
         MC_VERSION=$(curl -s -H "User-Agent: $USER_AGENT" "$API" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-print(data[0] if isinstance(data, list) else data.get('versions', [data])[0])
+versions = data.get('versions', {})
+keys = list(versions.keys())
+print(keys[0])
 " 2>/dev/null)
         if [ -z "$MC_VERSION" ]; then
             echo "Error: Failed to resolve latest Paper version"
@@ -153,11 +155,12 @@ print(data[0] if isinstance(data, list) else data.get('versions', [data])[0])
 import sys, json
 data = json.load(sys.stdin)
 builds = data.get('builds', data) if isinstance(data, dict) else data
-# Filter stable builds
-stable = [b for b in builds if b.get('channel') == 'STABLE' or 'STABLE' in str(b.get('channel', '')).upper()]
+if isinstance(builds, dict):
+    builds = builds.get('builds', [])
+stable = [b for b in builds if str(b.get('channel', '')).upper() == 'STABLE']
 if not stable:
     stable = builds
-latest = stable[-1] if isinstance(stable, list) else stable
+latest = stable[-1] if isinstance(stable, list) and stable else builds[-1]
 build_num = latest.get('build', '?')
 downloads = latest.get('downloads', {})
 url = downloads.get('server:default', {}).get('url', '')
