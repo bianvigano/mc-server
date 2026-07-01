@@ -77,6 +77,108 @@ if [ -z "$SERVER_TYPE" ]; then
         5) SERVER_TYPE="fabric" ;;
         *) echo "Invalid choice"; exit 1 ;;
     esac
+
+    # Ask for directory name
+    DEFAULT_DIR="./${SERVER_TYPE}-server"
+    echo ""
+    read -rp "Nama directory [$DEFAULT_DIR]: " INPUT_DIR
+    INSTALL_DIR="${INPUT_DIR:-$DEFAULT_DIR}"
+
+    # Ask for version with list
+    if [ -z "$MC_VERSION" ]; then
+        echo ""
+        echo "[*] Fetching available versions for ${SERVER_TYPE^^}..."
+
+        case "$SERVER_TYPE" in
+            paper|purpur)
+                local API_URL
+                if [ "$SERVER_TYPE" = "paper" ]; then
+                    API_URL="https://fill.papermc.io/v3/projects/paper"
+                else
+                    API_URL="https://api.purpurmc.org/v2/purpur"
+                fi
+
+                VERSIONS_JSON=$(curl -s -H "User-Agent: $USER_AGENT" "$API_URL")
+
+                # Parse versions
+                VERSIONS=$(python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+versions = data.get('versions', data)
+if isinstance(versions, dict):
+    keys = list(versions.keys())
+else:
+    keys = versions if isinstance(versions, list) else []
+# Show top 10
+for i, v in enumerate(keys[:10]):
+    print(f'{i+1}|{v}')
+" <<< "$VERSIONS_JSON" 2>/dev/null)
+
+                if [ -n "$VERSIONS" ]; then
+                    echo ""
+                    echo "Pilih versi (atau ketik manual):"
+                    while IFS='|' read -r NUM VER; do
+                        echo "  $NUM) $VER"
+                    done <<< "$VERSIONS"
+                    echo ""
+
+                    LATEST_VER=$(echo "$VERSIONS" | head -1 | cut -d'|' -f2)
+                    read -rp "Pilih nomor atau ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
+
+                    # Check if input is a number
+                    if [[ "$VERSION_INPUT" =~ ^[0-9]+$ ]]; then
+                        MC_VERSION=$(echo "$VERSIONS" | sed -n "${VERSION_INPUT}p" | cut -d'|' -f2)
+                    elif [ -n "$VERSION_INPUT" ]; then
+                        MC_VERSION="$VERSION_INPUT"
+                    else
+                        MC_VERSION="$LATEST_VER"
+                    fi
+                else
+                    read -rp "Minecraft version [latest]: " MC_VERSION
+                fi
+                ;;
+            fabric)
+                VERSIONS_JSON=$(curl -s "https://meta.fabricmc.net/v2/versions/game")
+                VERSIONS=$(python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+stable = [x for x in data if x.get('stable')]
+for i, v in enumerate(stable[:10]):
+    print(f'{i+1}|{v[\"version\"]}')
+" <<< "$VERSIONS_JSON" 2>/dev/null)
+
+                if [ -n "$VERSIONS" ]; then
+                    echo ""
+                    echo "Pilih versi (atau ketik manual):"
+                    while IFS='|' read -r NUM VER; do
+                        echo "  $NUM) $VER"
+                    done <<< "$VERSIONS"
+                    echo ""
+
+                    LATEST_VER=$(echo "$VERSIONS" | head -1 | cut -d'|' -f2)
+                    read -rp "Pilih nomor atau ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
+
+                    if [[ "$VERSION_INPUT" =~ ^[0-9]+$ ]]; then
+                        MC_VERSION=$(echo "$VERSIONS" | sed -n "${VERSION_INPUT}p" | cut -d'|' -f2)
+                    elif [ -n "$VERSION_INPUT" ]; then
+                        MC_VERSION="$VERSION_INPUT"
+                    else
+                        MC_VERSION="$LATEST_VER"
+                    fi
+                else
+                    read -rp "Minecraft version [latest]: " MC_VERSION
+                fi
+                ;;
+            bukkit|spigot)
+                echo "  Bukkit/Spigot: versi harus di-compile via BuildTools"
+                read -rp "Minecraft version (wajib, contoh: 1.21.4): " MC_VERSION
+                if [ -z "$MC_VERSION" ]; then
+                    echo "Error: --version wajib untuk Bukkit/Spigot"
+                    exit 1
+                fi
+                ;;
+        esac
+    fi
 fi
 
 # Validate type
