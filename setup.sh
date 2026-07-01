@@ -99,7 +99,7 @@ if [ -z "$SERVER_TYPE" ]; then
 
                 VERSIONS_JSON=$(curl -s -H "User-Agent: $USER_AGENT" "$API_URL")
 
-                # Parse versions
+                # Parse versions — newest first, get current from metadata
                 VERSIONS=$(python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -108,9 +108,26 @@ if isinstance(versions, dict):
     keys = list(versions.keys())
 else:
     keys = versions if isinstance(versions, list) else []
+# Reverse so newest is first
+keys = keys[::-1]
 # Show top 10
 for i, v in enumerate(keys[:10]):
     print(f'{i+1}|{v}')
+" <<< "$VERSIONS_JSON" 2>/dev/null)
+
+                # Get current/latest from metadata
+                LATEST_VER=$(python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+current = data.get('metadata', {}).get('current', '')
+if current:
+    print(current)
+else:
+    versions = data.get('versions', data)
+    if isinstance(versions, list):
+        print(versions[-1])
+    elif isinstance(versions, dict):
+        print(list(versions.keys())[0])
 " <<< "$VERSIONS_JSON" 2>/dev/null)
 
                 if [ -n "$VERSIONS" ]; then
@@ -121,7 +138,6 @@ for i, v in enumerate(keys[:10]):
                     done <<< "$VERSIONS"
                     echo ""
 
-                    LATEST_VER=$(echo "$VERSIONS" | head -1 | cut -d'|' -f2)
                     read -rp "Pilih nomor atau ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
 
                     # Check if input is a number
@@ -142,8 +158,17 @@ for i, v in enumerate(keys[:10]):
 import sys, json
 data = json.load(sys.stdin)
 stable = [x for x in data if x.get('stable')]
+# Reverse so newest is first
+stable = stable[::-1]
 for i, v in enumerate(stable[:10]):
     print(f'{i+1}|{v[\"version\"]}')
+" <<< "$VERSIONS_JSON" 2>/dev/null)
+
+                LATEST_VER=$(python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+stable = [x for x in data if x.get('stable')]
+print(stable[0]['version'] if stable else '')
 " <<< "$VERSIONS_JSON" 2>/dev/null)
 
                 if [ -n "$VERSIONS" ]; then
@@ -154,7 +179,6 @@ for i, v in enumerate(stable[:10]):
                     done <<< "$VERSIONS"
                     echo ""
 
-                    LATEST_VER=$(echo "$VERSIONS" | head -1 | cut -d'|' -f2)
                     read -rp "Pilih nomor atau ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
 
                     if [[ "$VERSION_INPUT" =~ ^[0-9]+$ ]]; then
