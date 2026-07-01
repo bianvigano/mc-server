@@ -246,7 +246,7 @@ download_buildtools() {
     echo "[1/3] Downloading BuildTools..."
     local BUILD_DIR="/tmp/mc-buildtools-$$"
     mkdir -p "$BUILD_DIR"
-    curl -fsSL -o "$BUILD_DIR/BuildTools.jar" \
+    curl --progress-bar -# -o "$BUILD_DIR/BuildTools.jar" \
         "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar"
 
     echo "[2/3] Building $PROJECT_UPPER for MC $MC_VERSION (this takes a while)..."
@@ -321,7 +321,7 @@ print(f'{build_num}|{url}')
     echo "[3/4] Downloading Paper $MC_VERSION build $BUILD_NUM..."
 
     mkdir -p "$INSTALL_DIR"
-    curl -fsSL -H "User-Agent: $USER_AGENT" -o "$INSTALL_DIR/paper.jar" "$JAR_URL"
+    curl --progress-bar -# -H "User-Agent: $USER_AGENT" -o "$INSTALL_DIR/paper.jar" "$JAR_URL"
     echo "  Saved: $INSTALL_DIR/paper.jar"
 }
 
@@ -348,7 +348,7 @@ print(versions[0] if isinstance(versions, list) else versions)
 
     echo "[3/4] Downloading Purpur $MC_VERSION (latest build)..."
     mkdir -p "$INSTALL_DIR"
-    curl -fsSL -o "$INSTALL_DIR/purpur.jar" "$API/$MC_VERSION/latest/download"
+    curl --progress-bar -# -o "$INSTALL_DIR/purpur.jar" "$API/$MC_VERSION/latest/download"
     echo "  Saved: $INSTALL_DIR/purpur.jar"
 }
 
@@ -396,7 +396,7 @@ print(stable[0]['version'] if stable else data[0]['version'])
 
     echo "[4/6] Downloading Fabric installer..."
     mkdir -p "$INSTALL_DIR"
-    curl -fsSL -o "$INSTALL_DIR/$INSTALLER_JAR" "$INSTALLER_URL"
+    curl --progress-bar -# -o "$INSTALL_DIR/$INSTALLER_JAR" "$INSTALLER_URL"
 
     echo "[5/6] Installing Fabric server..."
     cd "$INSTALL_DIR"
