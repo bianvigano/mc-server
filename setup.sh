@@ -86,6 +86,8 @@ case "$SERVER_TYPE" in
 esac
 
 INSTALL_DIR="${INSTALL_DIR:-./${SERVER_TYPE}-server}"
+# Convert to absolute path to avoid path resolution issues
+INSTALL_DIR="$(cd "$(dirname "$INSTALL_DIR")" 2>/dev/null && pwd)/$(basename "$INSTALL_DIR")" 2>/dev/null || INSTALL_DIR="$(mkdir -p "$INSTALL_DIR" && cd "$INSTALL_DIR" && pwd)"
 
 echo ""
 echo "========================================"
@@ -400,7 +402,8 @@ case "$SERVER_TYPE" in
         ;;
 esac
 
-# Accept EULA
+# Ensure directory exists and Accept EULA
+mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 accept_eula
 
