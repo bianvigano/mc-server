@@ -266,11 +266,12 @@ print(stable[0]['version'] if stable else data[0]['version'])
 #  Copy scripts to install dir
 # ═══════════════════════════════════════════════
 copy_scripts() {
-    cp "$SETUP_DIR/start.sh" "$INSTALL_DIR/start.sh"
-    chmod +x "$INSTALL_DIR/start.sh"
-
-    cp "$SETUP_DIR/backup.sh" "$INSTALL_DIR/backup.sh"
-    chmod +x "$INSTALL_DIR/backup.sh"
+    for f in start.sh backup.sh plugins.sh update.sh; do
+        if [ -f "$SETUP_DIR/$f" ]; then
+            cp "$SETUP_DIR/$f" "$INSTALL_DIR/$f"
+            chmod +x "$INSTALL_DIR/$f"
+        fi
+    done
 }
 
 # ═══════════════════════════════════════════════

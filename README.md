@@ -8,31 +8,67 @@ Supports: **Paper**, **Purpur**, **Fabric**
 
 - Auto-download server jar from official APIs (PaperMC, PurpurMC, Fabric Meta)
 - Accept EULA automatically
-- Copies `start.sh` — universal launcher (auto-detect tmux/screen/nohup)
-- Copies `backup.sh` — universal backup with rotation
-- Generates systemd service for auto-start on boot
-- Auto-kill stale processes on the configured port before start
-- Zero config — just run and go
+- `start.sh` — Universal launcher (tmux/screen/nohup auto-detect, auto-port kill)
+- `backup.sh` — Universal backup with rotation
+- `plugins.sh` — Modrinth plugin management (search, install, remove, update)
+- `update.sh` — Update server jar without touching world/config
+- `multi.sh` — Multi-server instance manager
+- `docker.sh` — Docker Compose generator (alternative to bare-metal)
+- Systemd service for auto-start on boot
 
 ## Quick Start
 
 ```bash
-# 1. Setup (interactive)
-./setup.sh
-
-# Or with flags:
+# Bare metal setup
 ./setup.sh --type paper
 ./setup.sh --type purpur --version 1.21.4
 ./setup.sh --type fabric --version 1.21.4
 
-# 2. Start server
+# Or Docker
+./docker.sh --type paper --ram 2G
+docker compose up -d
+```
+
+## Commands
+
+```bash
 cd paper-server  # or purpur-server, fabric-server
-./start.sh start
+
+# Server
+./start.sh start              # Start
+./start.sh stop               # Stop
+./start.sh restart            # Restart
+./start.sh status             # Status
+./start.sh console            # Attach console
+./start.sh send "say Hello"   # Send command
+
+# Config
+./start.sh config                    # Show all properties
+./start.sh config server-port        # Read one key
+./start.sh config set motd "Hi!"     # Set a key
+
+# Monitoring
+./start.sh stats              # RAM, PID, threads, TPS (needs RCON)
+
+# World
+./start.sh world backup           # Backup world
+./start.sh world backup "before-update"  # Labeled backup
+./start.sh world list             # List backups
+./start.sh world restore <file>   # Restore
+
+# Plugins (Paper/Purpur only)
+./start.sh plugins search essentials
+./start.sh plugins install essentialsx
+./start.sh plugins list
+./start.sh plugins update
+
+# RAM
+JAVA_XMX=4G ./start.sh start
 ```
 
 ## Setup Script
 
-```
+```bash
 ./setup.sh [OPTIONS]
 ```
 
@@ -62,70 +98,68 @@ cd paper-server  # or purpur-server, fabric-server
 - Rich mod ecosystem (Sodium, Lithium, etc.)
 - API: `meta.fabricmc.net/v2`
 
-## Generated Files
+## Files
 
+```
+mc-server/
+├── setup.sh        # Multi-type bare-metal setup
+├── start.sh        # Universal launcher + config + stats + world + plugins
+├── backup.sh       # Universal backup with rotation
+├── plugins.sh      # Modrinth plugin manager
+├── update.sh       # Update server jar
+├── multi.sh        # Multi-instance manager
+├── docker.sh       # Docker Compose generator
+└── README.md
+```
+
+After setup:
 ```
 <prefix>-server/
-├── start.sh                    # Server launcher (tmux/screen/nohup)
-├── backup.sh                   # Backup with auto-rotation
-├── minecraft-<type>.service    # Systemd service file
-├── server.jar                  # Server jar (paper.jar/purpur.jar/fabric-server-*.jar)
-├── eula.txt                    # Auto-accepted
-├── libraries/                  # Server dependencies
-└── server.properties           # Minecraft config
+├── start.sh         # Launcher + commands
+├── backup.sh        # Backup
+├── plugins/         # Plugins directory
+├── world/           # World data
+├── server.jar       # Paper/Purpur/Fabric jar
+├── .mc-type         # Server type
+├── .mc-version      # MC version
+├── .server-jar      # Jar filename
+├── eula.txt         # Auto-accepted
+└── server.properties
 ```
 
-## Commands
+## Multi-Server
+
+Run multiple instances from one mc-server repo:
 
 ```bash
-# Start/Stop
-./start.sh start
-./start.sh stop
-./start.sh restart
+./setup.sh --type paper --dir ./survival
+./setup.sh --type purpur --dir ./creative
+./setup.sh --type fabric --dir ./modded
 
-# Monitor
-./start.sh status
-./start.sh console          # tmux/screen: attach, nohup: tail log
+# List all instances
+./multi.sh list
 
-# Custom RAM
-JAVA_XMX=4G ./start.sh start
+# Manage specific instance
+./multi.sh start survival
+./multi.sh stop creative
+./multi.sh status modded
+./multi.sh send survival "say Hello"
+./multi.sh plugins survival search worldedit
 
-# Force specific backend
-FORCE_BACKEND=nohup ./start.sh start
+# Bulk operations
+./multi.sh all start
+./multi.sh all stop
+./multi.sh all status
 ```
 
-## Config (server.properties)
+## Docker Mode
 
 ```bash
-# View all properties
-./start.sh config
-
-# Read a property
-./start.sh config server-port
-
-# Set a property
-./start.sh config server-port 25566
-./start.sh config motd "My Cool Server"
-./start.sh config difficulty hard
-./start.sh config gamemode creative
-./start.sh config max-players 20
-./start.sh config online-mode false
+./docker.sh --type paper --ram 2G --port 25565
+docker compose up -d
+docker compose logs -f
+docker compose down
 ```
-
-Common keys:
-
-| Key | Values | Default |
-|-----|--------|---------|
-| server-port | 1-65535 | 25565 |
-| gamemode | survival/creative/adventure/spectator | survival |
-| difficulty | peaceful/easy/normal/hard | normal |
-| max-players | number | 20 |
-| motd | text | A Minecraft Server |
-| online-mode | true/false | true |
-| pvp | true/false | true |
-| level-seed | number/text | random |
-| view-distance | 2-32 | 10 |
-| simulation-distance | 2-32 | 10 |
 
 ## Backup
 
@@ -147,61 +181,30 @@ MAX_BACKUPS=48 ./backup.sh
 
 ```bash
 crontab -e
-```
-
-Add one of:
-
-```bash
-# Every 4 hours
+# Add: Backup every 4 hours
 0 */4 * * * /root/paper-server/backup.sh auto
-
-# Every hour
-0 * * * * /root/paper-server/backup.sh auto
-
-# Every 12 hours
-0 */12 * * * /root/paper-server/backup.sh auto
 ```
 
 ## Systemd (auto-start on boot)
 
 ```bash
-sudo cp minecraft-paper.service /etc/systemd/system/
+sudo cp paper-server/minecraft-paper.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable minecraft-paper
 sudo systemctl start minecraft-paper
-
-# Status & logs
-sudo systemctl status minecraft-paper
-sudo journalctl -u minecraft-paper -f
 ```
 
-## Backend Detection
-
-`start.sh` auto-detects the best multiplexer:
-
-1. **tmux** — preferred
-2. **screen** — fallback
-3. **nohup** — last resort, logs to `logs/console.log`
-
-Force specific backend:
-```bash
-FORCE_BACKEND=tmux ./start.sh start
-FORCE_BACKEND=screen ./start.sh start
-FORCE_BACKEND=nohup ./start.sh start
-```
-
-## Updating
+## Monitoring
 
 ```bash
-# Update setup script
-curl -fsSL https://raw.githubusercontent.com/bianvigano/mc-server/main/setup.sh -o setup.sh
-chmod +x setup.sh
+# Basic status
+./start.sh stats
 
-# Update launcher/backup scripts
-cd ~/paper-server
-curl -fsSL https://raw.githubusercontent.com/bianvigano/mc-server/main/start.sh -o start.sh
-curl -fsSL https://raw.githubusercontent.com/bianvigano/mc-server/main/backup.sh -o backup.sh
-chmod +x start.sh backup.sh
+# With RCON (for TPS, player list)
+./start.sh config set enable-rcon true
+./start.sh config set rcon.password "secret"
+./start.sh restart
+./start.sh stats
 ```
 
 ## Requirements
@@ -210,6 +213,7 @@ chmod +x start.sh backup.sh
 - curl, python3 (for setup script only)
 - tmux or screen (optional, auto-detects)
 - tar (for backup)
+- jq or python3 (for plugins.sh)
 
 ## How It Works
 
@@ -217,14 +221,14 @@ chmod +x start.sh backup.sh
 1. Queries official API for latest version + build
 2. Downloads server jar directly
 3. Accepts EULA
-4. Generates start.sh, backup.sh, systemd service
+4. Copies start.sh, backup.sh; generates systemd service
 
 **Fabric:**
 1. Queries `meta.fabricmc.net` for latest stable loader + installer
 2. Downloads installer jar from `maven.fabricmc.net`
 3. Runs installer to download Minecraft server + Fabric
 4. Accepts EULA
-5. Generates start.sh, backup.sh, systemd service
+5. Copies start.sh, backup.sh; generates systemd service
 6. Cleans up installer jar
 
 ## License
