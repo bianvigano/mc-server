@@ -14,16 +14,12 @@ USER_AGENT="mc-server/1.0 (https://github.com/bianvigano/mc-server)"
 cd "$SCRIPT_DIR"
 
 # Detect MC version
-if [ -f ".mc-version" ]; then
-    MC_VERSION="$(cat .mc-version)"
+# Read .mc-info
+if [ -f ".mc-info" ]; then
+    MC_VERSION="$(grep '^version=' .mc-info | cut -d= -f2 || echo '1.21')"
+    SERVER_TYPE="$(grep '^type=' .mc-info | cut -d= -f2 || echo 'paper')"
 else
     MC_VERSION="${MC_VERSION:-1.21}"
-fi
-
-# Detect server type for game_version filter
-if [ -f ".mc-type" ]; then
-    SERVER_TYPE="$(cat .mc-type)"
-else
     SERVER_TYPE="paper"
 fi
 
@@ -465,6 +461,6 @@ case "${1}" in
         echo ""
         echo "Env vars:"
         echo "  PLUGINS_DIR     Plugin directory (default: ./plugins)"
-        echo "  MC_VERSION      Minecraft version (auto-detected from .mc-version)"
+        echo "  MC_VERSION      Minecraft version (auto-detected from .mc-info)"
         ;;
 esac

@@ -18,25 +18,21 @@ JAVA_FLAGS="${JAVA_FLAGS:--XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPaus
 PID_FILE=".server.pid"
 
 # Auto-detect server jar
+# Read .mc-info if exists
+if [ -f ".mc-info" ]; then
+    SERVER_TYPE="$(grep '^type=' .mc-info | cut -d= -f2)"
+    MC_VERSION="$(grep '^version=' .mc-info | cut -d= -f2)"
+    SERVER_JAR_VAL="$(grep '^jar=' .mc-info | cut -d= -f2)"
+fi
+SERVER_TYPE="${SERVER_TYPE:-unknown}"
+
+# Auto-detect server jar
 if [ -n "$SERVER_JAR" ]; then
     JAR="$SERVER_JAR"
-elif [ -f ".server-jar" ]; then
-    JAR="$(cat .server-jar)"
+elif [ -n "$SERVER_JAR_VAL" ]; then
+    JAR="$SERVER_JAR_VAL"
 else
-    JAR="$(ls -1 paper.jar purpur.jar fabric-server-*.jar 2>/dev/null | head -1)"
-fi
-
-# Server type detection
-if [ -f ".mc-type" ]; then
-    SERVER_TYPE="$(cat .mc-type)"
-elif ls paper.jar &>/dev/null; then
-    SERVER_TYPE="paper"
-elif ls purpur.jar &>/dev/null; then
-    SERVER_TYPE="purpur"
-elif ls fabric-server-*.jar &>/dev/null; then
-    SERVER_TYPE="fabric"
-else
-    SERVER_TYPE="unknown"
+    JAR="$(ls -1 paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
 fi
 
 # ═══════════════════════════════════════════

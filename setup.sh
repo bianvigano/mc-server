@@ -412,7 +412,7 @@ print(stable[0]['version'] if stable else data[0]['version'])
     fi
 
     rm -f "$INSTALLER_JAR"
-    echo "$SERVER_JAR" > .server-jar
+    echo "$SERVER_JAR" > "$INSTALL_DIR/.fabric-jar-temp"
     echo "  Done: $SERVER_JAR"
 }
 
@@ -505,7 +505,9 @@ case "$SERVER_TYPE" in
         ;;
     fabric)
         download_fabric
-        SERVER_JAR=$(cat "$INSTALL_DIR/.server-jar" 2>/dev/null || echo "")
+        # download_fabric creates .fabric-jar-temp
+        SERVER_JAR=$(cat "$INSTALL_DIR/.fabric-jar-temp" 2>/dev/null || echo "")
+        rm -f "$INSTALL_DIR/.fabric-jar-temp"
         ;;
 esac
 
@@ -515,9 +517,11 @@ cd "$INSTALL_DIR"
 accept_eula
 
 # Save metadata
-echo "$SERVER_TYPE" > .mc-type
-echo "$MC_VERSION" > .mc-version
-echo "$SERVER_JAR" > .server-jar
+cat > .mc-info << EOF
+type=$SERVER_TYPE
+version=$MC_VERSION
+jar=$SERVER_JAR
+EOF
 
 # Copy standalone scripts + generate systemd
 copy_scripts

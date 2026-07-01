@@ -3,7 +3,7 @@
 # Usage: ./update.sh [--version 1.21.4]
 #
 # Supports: paper, purpur, fabric
-# Auto-detects type from .mc-type file
+# Auto-detects type from .mc-info file
 
 set -e
 
@@ -15,24 +15,15 @@ USER_AGENT="mc-server/1.0 (https://github.com/bianvigano/mc-server)"
 # ═══════════════════════════════════════════
 #  Detect current setup
 # ═══════════════════════════════════════════
-if [ -f ".mc-type" ]; then
-    SERVER_TYPE="$(cat .mc-type)"
+if [ -f ".mc-info" ]; then
+    SERVER_TYPE="$(grep '^type=' .mc-info | cut -d= -f2)"
+    CURRENT_VERSION="$(grep '^version=' .mc-info | cut -d= -f2)"
+    SERVER_JAR="$(grep '^jar=' .mc-info | cut -d= -f2)"
 else
-    echo "[ERROR] .mc-type not found. Run setup.sh first."
+    echo "[ERROR] .mc-info not found. Run setup.sh first."
     exit 1
 fi
-
-if [ -f ".mc-version" ]; then
-    CURRENT_VERSION="$(cat .mc-version)"
-else
-    CURRENT_VERSION="unknown"
-fi
-
-if [ -f ".server-jar" ]; then
-    SERVER_JAR="$(cat .server-jar)"
-else
-    SERVER_JAR="$(ls -1 paper.jar purpur.jar fabric-server-*.jar 2>/dev/null | head -1)"
-fi
+SERVER_JAR="${SERVER_JAR:-$(ls -1 paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)}"
 
 # Parse args
 NEW_VERSION=""
@@ -123,7 +114,7 @@ print(f'{build_num}|{url}')
 
     echo "[*] Downloading Paper build $BUILD_NUM..."
     curl -fsSL -H "User-Agent: $USER_AGENT" -o "paper.jar" "$JAR_URL"
-    echo "$TARGET_VER" > .mc-version
+    sed -i "s/^version=.*/version=$TARGET_VER/" .mc-info
     echo "[OK] Paper updated to build $BUILD_NUM"
 }
 
@@ -133,7 +124,7 @@ update_purpur() {
 
     echo "[*] Downloading Purpur $TARGET_VER (latest build)..."
     curl -fsSL -o "purpur.jar" "$API/$TARGET_VER/latest/download"
-    echo "$TARGET_VER" > .mc-version
+    sed -i "s/^version=.*/version=$TARGET_VER/" .mc-info
     echo "[OK] Purpur updated"
 }
 
@@ -176,8 +167,8 @@ print(stable[0]['version'] if stable else data[0]['version'])
     local NEW_JAR
     NEW_JAR=$(ls -1t fabric-server-*.jar 2>/dev/null | head -1)
     if [ -n "$NEW_JAR" ]; then
-        echo "$NEW_JAR" > .server-jar
-        echo "$TARGET_VER" > .mc-version
+        sed -i "s/^version=.*/version=$TARGET_VER/" .mc-info
+        sed -i "s/^jar=.*/jar=$NEW_JAR/" .mc-info
         echo "$LOADER_VERSION" > .fabric-loader
         echo "[OK] Fabric updated: $NEW_JAR"
     else
@@ -201,7 +192,7 @@ echo "========================================"
 echo "  Update Complete!"
 echo "========================================"
 echo "Type: $SERVER_TYPE"
-echo "Version: $(cat .mc-version 2>/dev/null || echo '?')"
+echo "Version: $(grep '^version=' .mc-info 2>/dev/null | cut -d= -f2 || echo '?')"
 echo ""
 echo "  ./start.sh start"
 echo ""

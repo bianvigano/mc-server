@@ -23,23 +23,12 @@ LABEL="${1:-manual}"
 SESSION_NAME="${SESSION_NAME:-minecraft}"
 MAX_BACKUPS="${MAX_BACKUPS:-24}"
 
-# Detect server type
-if [ -f ".mc-type" ]; then
-    SERVER_TYPE="$(cat .mc-type)"
-elif ls paper.jar &>/dev/null; then
-    SERVER_TYPE="paper"
-elif ls purpur.jar &>/dev/null; then
-    SERVER_TYPE="purpur"
-elif ls fabric-server-*.jar &>/dev/null; then
-    SERVER_TYPE="fabric"
+# Read .mc-info
+if [ -f ".mc-info" ]; then
+    SERVER_TYPE="$(grep '^type=' .mc-info | cut -d= -f2 || echo 'mc')"
+    MC_VER="$(grep '^version=' .mc-info | cut -d= -f2 || echo 'unknown')"
 else
     SERVER_TYPE="mc"
-fi
-
-# Detect MC version
-if [ -f ".mc-version" ]; then
-    MC_VER="$(cat .mc-version)"
-else
     MC_VER="unknown"
 fi
 
