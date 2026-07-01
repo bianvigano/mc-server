@@ -8,9 +8,9 @@ Supports: **Paper**, **Purpur**, **Fabric**
 
 - Auto-download server jar from official APIs (PaperMC, PurpurMC, Fabric Meta)
 - Accept EULA automatically
-- Generate `start.sh` — server launcher (auto-detect tmux/screen/nohup)
-- Generate `backup.sh` — auto-backup with rotation
-- Generate systemd service for auto-start on boot
+- Copies `start.sh` — universal launcher (auto-detect tmux/screen/nohup)
+- Copies `backup.sh` — universal backup with rotation
+- Generates systemd service for auto-start on boot
 - Auto-kill stale processes on the configured port before start
 - Zero config — just run and go
 
