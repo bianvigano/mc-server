@@ -99,7 +99,7 @@ if [ -z "$SERVER_TYPE" ]; then
 
                 VERSIONS_JSON=$(curl -s -H "User-Agent: $USER_AGENT" "$API_URL")
 
-                # Parse versions — newest first, get current from metadata
+                # Parse versions — newest first
                 VERSIONS=$(python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -109,10 +109,8 @@ if isinstance(versions, dict):
 else:
     keys = versions if isinstance(versions, list) else []
 # Reverse so newest is first
-keys = keys[::-1]
-# Show top 10
-for i, v in enumerate(keys[:10]):
-    print(f'{i+1}|{v}')
+for v in keys[::-1]:
+    print(v)
 " <<< "$VERSIONS_JSON" 2>/dev/null)
 
                 # Get current/latest from metadata
@@ -132,22 +130,14 @@ else:
 
                 if [ -n "$VERSIONS" ]; then
                     echo ""
-                    echo "Pilih versi (atau ketik manual):"
-                    while IFS='|' read -r NUM VER; do
-                        echo "  $NUM) $VER"
-                    done <<< "$VERSIONS"
+                    echo "Available versions:"
+                    echo "$VERSIONS" | while read -r VER; do
+                        echo "  > $VER"
+                    done
                     echo ""
 
-                    read -rp "Pilih nomor atau ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
-
-                    # Check if input is a number
-                    if [[ "$VERSION_INPUT" =~ ^[0-9]+$ ]]; then
-                        MC_VERSION=$(echo "$VERSIONS" | sed -n "${VERSION_INPUT}p" | cut -d'|' -f2)
-                    elif [ -n "$VERSION_INPUT" ]; then
-                        MC_VERSION="$VERSION_INPUT"
-                    else
-                        MC_VERSION="$LATEST_VER"
-                    fi
+                    read -rp "Ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
+                    MC_VERSION="${VERSION_INPUT:-$LATEST_VER}"
                 else
                     read -rp "Minecraft version [latest]: " MC_VERSION
                 fi
@@ -159,9 +149,8 @@ import sys, json
 data = json.load(sys.stdin)
 stable = [x for x in data if x.get('stable')]
 # Reverse so newest is first
-stable = stable[::-1]
-for i, v in enumerate(stable[:10]):
-    print(f'{i+1}|{v[\"version\"]}')
+for v in stable[::-1]:
+    print(v['version'])
 " <<< "$VERSIONS_JSON" 2>/dev/null)
 
                 LATEST_VER=$(python3 -c "
@@ -173,21 +162,14 @@ print(stable[0]['version'] if stable else '')
 
                 if [ -n "$VERSIONS" ]; then
                     echo ""
-                    echo "Pilih versi (atau ketik manual):"
-                    while IFS='|' read -r NUM VER; do
-                        echo "  $NUM) $VER"
-                    done <<< "$VERSIONS"
+                    echo "Available versions:"
+                    echo "$VERSIONS" | while read -r VER; do
+                        echo "  > $VER"
+                    done
                     echo ""
 
-                    read -rp "Pilih nomor atau ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
-
-                    if [[ "$VERSION_INPUT" =~ ^[0-9]+$ ]]; then
-                        MC_VERSION=$(echo "$VERSIONS" | sed -n "${VERSION_INPUT}p" | cut -d'|' -f2)
-                    elif [ -n "$VERSION_INPUT" ]; then
-                        MC_VERSION="$VERSION_INPUT"
-                    else
-                        MC_VERSION="$LATEST_VER"
-                    fi
+                    read -rp "Ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
+                    MC_VERSION="${VERSION_INPUT:-$LATEST_VER}"
                 else
                     read -rp "Minecraft version [latest]: " MC_VERSION
                 fi
