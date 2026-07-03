@@ -558,6 +558,54 @@ EOF
 }
 
 # ═══════════════════════════════════════════
+#  Usage / help
+# ═══════════════════════════════════════════
+print_usage() {
+    echo "Usage: $0 menu"
+    echo ""
+    echo "Server:"
+    echo "  start              Start server"
+    echo "  stop               Stop server"
+    echo "  restart            Restart server"
+    echo "  status             Server status"
+    echo "  console            Attach to console"
+    echo "  send <cmd>         Send command to server"
+    echo ""
+    echo "Config:"
+    echo "  config             Show all properties"
+    echo "  config get <key>   Read a property"
+    echo "  config set <key> <val>  Set a property"
+    echo ""
+    echo "Monitoring:"
+    echo "  stats              RAM, PID, threads, RCON info"
+    echo ""
+    echo "World:"
+    echo "  world backup [label]  Backup world"
+    echo "  world restore <file>  Restore world"
+    echo "  world list            List world backups"
+    echo "  world delete <file>   Delete a backup"
+    echo ""
+    echo "Plugins:"
+    echo "  plugins search <q>      Search Modrinth"
+    echo "  plugins install <slug>  Install plugin"
+    echo "  plugins remove <slug>   Remove plugin"
+    echo "  plugins list            List installed"
+    echo "  plugins update          Update all"
+    echo ""
+    echo "Menu:"
+    echo "  menu               Show interactive menu"
+    echo ""
+    echo "Env vars:"
+    echo "  JAVA_XMS          Min RAM               (default: 1G)"
+    echo "  JAVA_XMX          Max RAM               (default: 2G)"
+    echo "  JAVA_FLAGS        JVM flags             (default: G1GC tuning)"
+    echo "  SERVER_JAR        Jar filename          (auto-detected)"
+    echo "  SESSION_NAME      Screen/tmux name      (default: minecraft)"
+    echo "  FORCE_BACKEND     tmux|screen|nohup     (auto-detected)"
+    echo "  WORLD_BACKUP_DIR  World backup location (default: ./world-backups)"
+}
+
+# ═══════════════════════════════════════════
 #  Interactive menu
 # ═══════════════════════════════════════════
 show_menu() {
@@ -705,43 +753,9 @@ else
         send|cmd)       do_send "$@" ;;
         plugins|plugin) shift; do_plugins "$@" ;;
         mcinfo)         do_mcinfo ;;
+        menu)           show_menu ;;
         *)
-            echo "Usage: $0 {command}"
-            echo ""
-            echo "Server:"
-            echo "  start              Start server"
-            echo "  stop               Stop server"
-            echo "  restart            Restart server"
-            echo "  status             Server status"
-            echo "  console            Attach to console"
-            echo "  send <cmd>         Send command to server"
-            echo ""
-            echo "Config:"
-            echo "  config             Show all properties"
-            echo "  config get <key>   Read a property"
-            echo "  config set <key> <val>  Set a property"
-            echo ""
-            echo "Monitoring:"
-            echo "  stats              RAM, PID, threads, RCON info"
-            echo ""
-            echo "World:"
-            echo "  world backup [label]  Backup world"
-            echo "  world restore <file>  Restore world"
-            echo "  world list            List world backups"
-            echo "  world delete <file>   Delete a backup"
-            echo ""
-            echo "Plugins:"
-            echo "  plugins search <q>    Search Modrinth"
-            echo "  plugins install <slug>  Install plugin"
-            echo "  plugins remove <slug>   Remove plugin"
-            echo "  plugins list          List installed"
-            echo "  plugins update        Update all"
-            echo ""
-            echo "Info:"
-            echo "  mcinfo               View/edit .mc-info"
-            echo ""
-            echo "Interactive mode:"
-            echo "  (no arguments)       Show menu"
+            print_usage
             ;;
     esac
 fi
