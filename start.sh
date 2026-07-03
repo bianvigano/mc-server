@@ -739,7 +739,7 @@ show_menu() {
 # ═══════════════════════════════════════════
 if [ -z "$1" ]; then
     # No arguments -> show interactive menu
-    show_menu
+    print_usage
 else
     case "$1" in
         start)          do_start ;;
