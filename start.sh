@@ -1,6 +1,6 @@
 #!/bin/bash
 # start.sh — Universal MC server launcher
-# Usage: ./start.sh {start|stop|restart|status|console|config|stats|world|send|plugins|mcinfo|menu}
+# Usage: ./start.sh {start|run|stop|restart|status|console|config|stats|world|send|plugins|mcinfo|menu}
 # Auto-detects: tmux > screen > nohup fallback
 
 set -e
@@ -11,47 +11,89 @@ cd "$SCRIPT_DIR"
 # ═══════════════════════════════════════════
 #  Config — override via env vars
 # ═══════════════════════════════════════════
+INFO_FILE=".mc-info"
+DEFAULT_JAVA_FLAGS="-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200"
 SESSION_NAME="${SESSION_NAME:-minecraft}"
-JAVA_XMS="${JAVA_XMS:-1G}"
-JAVA_XMX="${JAVA_XMX:-2G}"
-JAVA_FLAGS="${JAVA_FLAGS:--XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200}"
 PID_FILE=".server.pid"
 
-# Auto-detect server jar
-# Read .mc-info if exists
-if [ -f ".mc-info" ]; then
-    SERVER_TYPE="$(grep '^type=' .mc-info | cut -d= -f2)"
-    MC_VERSION="$(grep '^version=' .mc-info | cut -d= -f2)"
-    SERVER_JAR_VAL="$(grep '^jar=' .mc-info | cut -d= -f2)"
-fi
-SERVER_TYPE="${SERVER_TYPE:-unknown}"
+mcinfo_get() {
+    local KEY="$1"
+    [ -f "$INFO_FILE" ] || return 1
+    awk -F= -v key="$KEY" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "$INFO_FILE"
+}
+
+mcinfo_set() {
+    local KEY="$1"
+    shift
+    local VALUE="$*"
+    local TMP_FILE
+    TMP_FILE="$(mktemp)"
+
+    if [ -f "$INFO_FILE" ]; then
+        awk -F= -v key="$KEY" -v value="$VALUE" '
+            BEGIN { updated = 0 }
+            $1 == key {
+                print key "=" value
+                updated = 1
+                next
+            }
+            { print }
+            END {
+                if (!updated) {
+                    print key "=" value
+                }
+            }
+        ' "$INFO_FILE" > "$TMP_FILE"
+    else
+        printf "%s=%s\n" "$KEY" "$VALUE" > "$TMP_FILE"
+    fi
+
+    mv "$TMP_FILE" "$INFO_FILE"
+}
+
+reload_mcinfo_values() {
+    MCINFO_SERVER_TYPE="$(mcinfo_get type 2>/dev/null || true)"
+    MCINFO_MC_VERSION="$(mcinfo_get version 2>/dev/null || true)"
+    MCINFO_SERVER_JAR="$(mcinfo_get jar 2>/dev/null || true)"
+    MCINFO_BACKEND="$(mcinfo_get backend 2>/dev/null || true)"
+    MCINFO_XMS="$(mcinfo_get xms 2>/dev/null || true)"
+    MCINFO_XMX="$(mcinfo_get xmx 2>/dev/null || true)"
+    MCINFO_AUTO_RESTART="$(mcinfo_get auto_restart 2>/dev/null || true)"
+    MCINFO_JAVA_FLAGS="$(mcinfo_get java_flags 2>/dev/null || true)"
+}
+
+reload_mcinfo_values
+
+SERVER_TYPE="${SERVER_TYPE:-${MCINFO_SERVER_TYPE:-unknown}}"
+MC_VERSION="${MC_VERSION:-${MCINFO_MC_VERSION:-}}"
+SERVER_JAR_VAL="${SERVER_JAR_VAL:-${MCINFO_SERVER_JAR:-}}"
+JAVA_XMS="${JAVA_XMS:-${MCINFO_XMS:-1G}}"
+JAVA_XMX="${JAVA_XMX:-${MCINFO_XMX:-2G}}"
+AUTO_RESTART="${AUTO_RESTART:-${MCINFO_AUTO_RESTART:-false}}"
 
 # Set default Java flags based on server type
 set_java_flags_by_type() {
     case "$SERVER_TYPE" in
         paper|purpur)
-            # Paper/PaperSpigot defaults are fine
-            JAVA_FLAGS="${JAVA_FLAGS:--XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200}"
+            JAVA_FLAGS="$DEFAULT_JAVA_FLAGS"
             ;;
         fabric)
-            # Fabric often needs a bit more metaspace
-            JAVA_FLAGS="${JAVA_FLAGS:--XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256M}"
+            JAVA_FLAGS="-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256M"
             ;;
         forge)
-            # Forge may need more metaspace and different GC
-            JAVA_FLAGS="${JAVA_FLAGS:--XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=512M}"
-            ;;
-        fabric|forge|paper|purpur|spigot|bukkit|vanilla)
-            # generic fallback
-            :
+            JAVA_FLAGS="-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=512M"
             ;;
         *)
-            # unknown type, keep default
-            :
+            JAVA_FLAGS="$DEFAULT_JAVA_FLAGS"
             ;;
     esac
 }
-# Apply type-specific flags if JAVA_FLAGS not explicitly set by user
+
+if [ -z "${JAVA_FLAGS+x}" ] && [ -n "$MCINFO_JAVA_FLAGS" ]; then
+    JAVA_FLAGS="$MCINFO_JAVA_FLAGS"
+fi
+
+# Apply type-specific flags if JAVA_FLAGS not explicitly set by user or .mc-info
 if [ -z "${JAVA_FLAGS+x}" ]; then
     set_java_flags_by_type
 fi
@@ -99,7 +141,48 @@ detect_backend() {
     fi
 }
 
-BACKEND="${FORCE_BACKEND:-$(detect_backend)}"
+refresh_runtime_from_mcinfo() {
+    reload_mcinfo_values
+
+    SERVER_TYPE="${MCINFO_SERVER_TYPE:-unknown}"
+    MC_VERSION="${MCINFO_MC_VERSION:-}"
+    SERVER_JAR_VAL="${MCINFO_SERVER_JAR:-}"
+    JAVA_XMS="${MCINFO_XMS:-1G}"
+    JAVA_XMX="${MCINFO_XMX:-2G}"
+    AUTO_RESTART="${MCINFO_AUTO_RESTART:-false}"
+
+    if [ -n "$MCINFO_JAVA_FLAGS" ]; then
+        JAVA_FLAGS="$MCINFO_JAVA_FLAGS"
+    else
+        set_java_flags_by_type
+    fi
+
+    if [ -n "$SERVER_JAR" ]; then
+        JAR="$SERVER_JAR"
+    elif [ -n "$SERVER_JAR_VAL" ]; then
+        JAR="$SERVER_JAR_VAL"
+    else
+        JAR="$(ls -1 paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
+    fi
+
+    case "${FORCE_BACKEND:-${MCINFO_BACKEND:-}}" in
+        tmux|screen|nohup)
+            BACKEND="${FORCE_BACKEND:-$MCINFO_BACKEND}"
+            ;;
+        *)
+            BACKEND="$(detect_backend)"
+            ;;
+    esac
+}
+
+case "${FORCE_BACKEND:-${MCINFO_BACKEND:-}}" in
+    tmux|screen|nohup)
+        BACKEND="${FORCE_BACKEND:-$MCINFO_BACKEND}"
+        ;;
+    *)
+        BACKEND="$(detect_backend)"
+        ;;
+esac
 
 is_running() {
     case "$BACKEND" in
@@ -164,6 +247,43 @@ do_start() {
         echo "[ERROR] Server gagal start. Cek log."
         exit 1
     fi
+}
+
+do_run() {
+    if is_running; then
+        echo "[*] Server sudah jalan ($BACKEND: $SESSION_NAME)"
+        echo "    Stop dulu dengan: $0 stop"
+        return
+    fi
+
+    if [ -z "$JAR" ] || [ ! -f "$JAR" ]; then
+        echo "[ERROR] File jar tidak ditemukan: ${JAR:-<empty>}"
+        exit 1
+    fi
+
+    auto_kill_port
+
+    while true; do
+        echo "[*] Menjalankan server langsung di terminal ini..."
+        echo "    Type:    $SERVER_TYPE"
+        echo "    Jar:     $JAR"
+        echo "    Port:    $(get_port)"
+        echo "    RAM:     $JAVA_XMS - $JAVA_XMX"
+        echo "    Backend: direct"
+        echo "    Java Flags: $JAVA_FLAGS"
+        echo ""
+
+        java $JAVA_FLAGS -Xms"$JAVA_XMS" -Xmx"$JAVA_XMX" -jar "$JAR" nogui
+
+        if [ "$AUTO_RESTART" = "true" ]; then
+            echo "[WARN] Server berhenti. Restart lagi dalam 1 detik..."
+            echo "       Tekan Ctrl+C untuk keluar."
+            sleep 1
+        else
+            echo "[*] Server selesai dijalankan."
+            break
+        fi
+    done
 }
 
 do_stop() {
@@ -507,7 +627,6 @@ do_plugins() {
 #  Command: mcinfo — view/edit .mc-info
 # ═══════════════════════════════════════════
 do_mcinfo() {
-    local INFO_FILE=".mc-info"
     if [ -f "$INFO_FILE" ]; then
         echo "=== .mc-info (current) ==="
         cat "$INFO_FILE"
@@ -525,16 +644,7 @@ do_mcinfo() {
             done
             printf "%s\n" "${lines[@]}" > "$INFO_FILE"
             echo "[OK] .mc-info updated."
-            # Reload variables
-            SERVER_TYPE="$(grep '^type=' $INFO_FILE 2>/dev/null | cut -d= -f2 || echo "unknown")"
-            MC_VERSION="$(grep '^version=' $INFO_FILE 2>/dev/null | cut -d= -f2 || echo "")"
-            SERVER_JAR_VAL="$(grep '^jar=' $INFO_FILE 2>/dev/null | cut -d= -f2 || echo "")"
-            # Update JAR detection if needed
-            if [ -n "$SERVER_JAR_VAL" ]; then
-                JAR="$SERVER_JAR_VAL"
-            else
-                JAR="$(ls -1 paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
-            fi
+            refresh_runtime_from_mcinfo
         fi
     else
         echo ".mc-info not found. Create a new one?"
@@ -542,15 +652,17 @@ do_mcinfo() {
         if [[ "$ans" =~ ^[Yy]$ ]]; then
             echo "Creating .mc-info with default values."
             cat > "$INFO_FILE" <<EOF
-type=paper
-version=1.20.4
-jar=paper.jar
+type=${SERVER_TYPE}
+version=${MC_VERSION}
+jar=${JAR}
+backend=${BACKEND}
+xms=${JAVA_XMS}
+xmx=${JAVA_XMX}
+auto_restart=${AUTO_RESTART}
+java_flags=${JAVA_FLAGS}
 EOF
             echo "[OK] .mc-info created."
-            SERVER_TYPE="paper"
-            MC_VERSION="1.20.4"
-            SERVER_JAR_VAL="paper.jar"
-            JAR="paper.jar"
+            refresh_runtime_from_mcinfo
         else
             echo "No .mc-info created."
         fi
@@ -565,6 +677,7 @@ print_usage() {
     echo ""
     echo "Server:"
     echo "  start              Start server"
+    echo "  run                Run server directly in foreground"
     echo "  stop               Stop server"
     echo "  restart            Restart server"
     echo "  status             Server status"
@@ -599,6 +712,7 @@ print_usage() {
     echo "  JAVA_XMS          Min RAM               (default: 1G)"
     echo "  JAVA_XMX          Max RAM               (default: 2G)"
     echo "  JAVA_FLAGS        JVM flags             (default: G1GC tuning)"
+    echo "  AUTO_RESTART      true|false            (default: false)"
     echo "  SERVER_JAR        Jar filename          (auto-detected)"
     echo "  SESSION_NAME      Screen/tmux name      (default: minecraft)"
     echo "  FORCE_BACKEND     tmux|screen|nohup     (auto-detected)"
@@ -709,9 +823,9 @@ show_menu() {
                 echo "  3) nohup"
                 read -p "Pilih [1-3]: " be
                 case "$be" in
-                    1) export FORCE_BACKEND=tmux ;;
-                    2) export FORCE_BACKEND=screen ;;
-                    3) export FORCE_BACKEND=nohup ;;
+                    1) BACKEND=tmux; mcinfo_set backend "$BACKEND"; echo "[OK] backend=$BACKEND disimpan ke $INFO_FILE" ;;
+                    2) BACKEND=screen; mcinfo_set backend "$BACKEND"; echo "[OK] backend=$BACKEND disimpan ke $INFO_FILE" ;;
+                    3) BACKEND=nohup; mcinfo_set backend "$BACKEND"; echo "[OK] backend=$BACKEND disimpan ke $INFO_FILE" ;;
                     *) echo "Pilihan tidak valid." ;;
                 esac
                 echo "Backend akan berlaku pada perintah berikutnya."
@@ -720,8 +834,17 @@ show_menu() {
                 echo "RAM saat ini: XMS=$JAVA_XMS, XMX=$JAVA_XMX"
                 read -p "XMS (misal 1G): " xms
                 read -p "XMX (misal 2G): " xmx
-                if [ -n "$xms" ]; then export JAVA_XMS="$xms"; fi
-                if [ -n "$xmx" ]; then export JAVA_XMX="$xmx"; fi
+                if [ -n "$xms" ]; then
+                    JAVA_XMS="$xms"
+                    mcinfo_set xms "$JAVA_XMS"
+                fi
+                if [ -n "$xmx" ]; then
+                    JAVA_XMX="$xmx"
+                    mcinfo_set xmx "$JAVA_XMX"
+                fi
+                if [ -n "$xms" ] || [ -n "$xmx" ]; then
+                    echo "[OK] RAM disimpan ke $INFO_FILE"
+                fi
                 echo "RAM akan diperbarui pada start berikutnya."
                 read -p "Tekan Enter untuk lanjut..." ;;
             13) do_mcinfo ;;
@@ -743,6 +866,7 @@ if [ -z "$1" ]; then
 else
     case "$1" in
         start)          do_start ;;
+        run)            do_run ;;
         stop)           do_stop ;;
         restart)        do_stop; sleep 2; do_start ;;
         status)         do_status ;;

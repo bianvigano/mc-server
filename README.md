@@ -9,7 +9,7 @@ Supports: **Bukkit**, **Spigot**, **Paper**, **Purpur**, **Fabric**
 - Interactive setup with version list from API
 - Auto-download server jar from official APIs (PaperMC, PurpurMC, Fabric Meta, SpigotMC BuildTools)
 - Accept EULA automatically
-- `start.sh` — Universal launcher (tmux/screen/nohup auto-detect, auto-port kill)
+- `start.sh` — Universal launcher with interactive menu, direct run mode, backend auto-detect, and auto-port kill
 - `start.sh config` — Read/set server.properties from CLI
 - `start.sh stats` — Server monitoring (RAM, PID, threads, TPS via RCON)
 - `start.sh world` — World backup/restore/list
@@ -83,7 +83,10 @@ Ketik versi [latest = 26.1.2]: 1.21.4
 cd survival  # server directory
 
 # Server
+./start.sh                     # Open interactive menu
+./start.sh menu                # Open interactive menu explicitly
 ./start.sh start              # Start
+./start.sh run                # Run directly in foreground
 ./start.sh stop               # Stop
 ./start.sh restart            # Restart
 ./start.sh status             # Status
@@ -112,7 +115,18 @@ cd survival  # server directory
 
 # RAM
 JAVA_XMX=4G ./start.sh start
+
+# Direct run with auto-restart
+AUTO_RESTART=true ./start.sh run
 ```
+
+## Launcher Modes
+
+- `./start.sh` or `./start.sh menu`: opens the interactive menu for navigating server actions without memorizing commands.
+- `./start.sh start`: starts the server in the background using the configured backend (`tmux`, `screen`, or `nohup`).
+- `./start.sh run`: runs the server directly in the current terminal foreground without using a backend.
+- `./start.sh stop`, `status`, `console`, and `send` are intended for the background/backend-based mode started with `./start.sh start`.
+- `AUTO_RESTART=true ./start.sh run` keeps restarting the foreground server after it exits.
 
 ## Setup Script
 
@@ -174,7 +188,7 @@ After setup:
 ├── plugins/         # Plugins directory
 ├── world/           # World data
 ├── server.jar       # Paper/Purpur/Fabric jar
-├── .mc-info         # Server metadata (type, version, jar)
+├── .mc-info         # Server metadata + launcher config
 ├── eula.txt         # Auto-accepted
 └── server.properties
 ```
@@ -184,7 +198,14 @@ Metadata format (`.mc-info`):
 type=paper
 version=1.21.4
 jar=paper.jar
+backend=tmux
+xms=1G
+xmx=2G
+auto_restart=false
+java_flags=-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
 ```
+
+`start.sh` reads launcher defaults from `.mc-info`. The interactive menu can also save backend and RAM changes back into this file, while environment variables such as `JAVA_XMS`, `JAVA_XMX`, `JAVA_FLAGS`, `AUTO_RESTART`, or `SERVER_JAR` still override the saved values for a single run.
 
 ## Docker Mode
 
