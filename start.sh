@@ -1,6 +1,6 @@
 #!/bin/bash
 # start.sh — Universal MC server launcher
-# Usage: ./start.sh {start|stop|restart|status|console|config|stats|world|send|plugins|menu}
+# Usage: ./start.sh {start|stop|restart|status|console|config|stats|world|send|plugins|mcinfo|menu}
 # Auto-detects: tmux > screen > nohup fallback
 
 set -e
@@ -504,6 +504,60 @@ do_plugins() {
 }
 
 # ═══════════════════════════════════════════
+#  Command: mcinfo — view/edit .mc-info
+# ═══════════════════════════════════════════
+do_mcinfo() {
+    local INFO_FILE=".mc-info"
+    if [ -f "$INFO_FILE" ]; then
+        echo "=== .mc-info (current) ==="
+        cat "$INFO_FILE"
+        echo ""
+        echo "Edit .mc-info? (y/n)"
+        read -p "> " answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            echo "Enter new content (end with a blank line):"
+            local lines=()
+            while IFS= read -r line; do
+                if [ -z "$line" ]; then
+                    break
+                fi
+                lines+=("$line")
+            done
+            printf "%s\n" "${lines[@]}" > "$INFO_FILE"
+            echo "[OK] .mc-info updated."
+            # Reload variables
+            SERVER_TYPE="$(grep '^type=' $INFO_FILE 2>/dev/null | cut -d= -f2 || echo "unknown")"
+            MC_VERSION="$(grep '^version=' $INFO_FILE 2>/dev/null | cut -d= -f2 || echo "")"
+            SERVER_JAR_VAL="$(grep '^jar=' $INFO_FILE 2>/dev/null | cut -d= -f2 || echo "")"
+            # Update JAR detection if needed
+            if [ -n "$SERVER_JAR_VAL" ]; then
+                JAR="$SERVER_JAR_VAL"
+            else
+                JAR="$(ls -1 paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
+            fi
+        fi
+    else
+        echo ".mc-info not found. Create a new one?"
+        read -p "Create .mc-info now? (y/n) " ans
+        if [[ "$ans" =~ ^[Yy]$ ]]; then
+            echo "Creating .mc-info with default values."
+            cat > "$INFO_FILE" <<EOF
+type=paper
+version=1.20.4
+jar=paper.jar
+EOF
+            echo "[OK] .mc-info created."
+            SERVER_TYPE="paper"
+            MC_VERSION="1.20.4"
+            SERVER_JAR_VAL="paper.jar"
+            JAR="paper.jar"
+        else
+            echo "No .mc-info created."
+        fi
+    fi
+}
+
+# ═══════════════════════════════════════════
 #  Interactive menu
 # ═══════════════════════════════════════════
 show_menu() {
@@ -528,9 +582,10 @@ show_menu() {
         echo "10) Send command to server"
         echo "11) Change backend (tmux/screen/nohup)"
         echo "12) Change Java memory (XMS/XMX)"
-        echo "13) Exit"
+        echo "13) View/Edit .mc-info"
+        echo "14) Exit"
         echo ""
-        read -p "Pilih opsi [1-13]: " choice
+        read -p "Pilih opsi [1-14]: " choice
         case "$choice" in
             1) do_start ;;
             2) do_stop ;;
@@ -621,7 +676,8 @@ show_menu() {
                 if [ -n "$xmx" ]; then export JAVA_XMX="$xmx"; fi
                 echo "RAM akan diperbarui pada start berikutnya."
                 read -p "Tekan Enter untuk lanjut..." ;;
-            13)
+            13) do_mcinfo ;;
+            14)
                 echo "Keluar..."
                 break
                 ;;
@@ -648,6 +704,7 @@ else
         world)          do_world "$@" ;;
         send|cmd)       do_send "$@" ;;
         plugins|plugin) shift; do_plugins "$@" ;;
+        mcinfo)         do_mcinfo ;;
         *)
             echo "Usage: $0 {command}"
             echo ""
@@ -679,6 +736,9 @@ else
             echo "  plugins remove <slug>   Remove plugin"
             echo "  plugins list          List installed"
             echo "  plugins update        Update all"
+            echo ""
+            echo "Info:"
+            echo "  mcinfo               View/edit .mc-info"
             echo ""
             echo "Interactive mode:"
             echo "  (no arguments)       Show menu"
