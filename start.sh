@@ -1,6 +1,6 @@
 #!/bin/bash
 # start.sh — Universal MC server launcher
-# Usage: ./start.sh {start|stop|restart|status|console|config|stats|world|send}
+# Usage: ./start.sh {start|stop|restart|status|console|config|stats|world|send|plugins|menu}
 # Auto-detects: tmux > screen > nohup fallback
 
 set -e
@@ -25,6 +25,36 @@ if [ -f ".mc-info" ]; then
     SERVER_JAR_VAL="$(grep '^jar=' .mc-info | cut -d= -f2)"
 fi
 SERVER_TYPE="${SERVER_TYPE:-unknown}"
+
+# Set default Java flags based on server type
+set_java_flags_by_type() {
+    case "$SERVER_TYPE" in
+        paper|purpur)
+            # Paper/PaperSpigot defaults are fine
+            JAVA_FLAGS="${JAVA_FLAGS:--XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200}"
+            ;;
+        fabric)
+            # Fabric often needs a bit more metaspace
+            JAVA_FLAGS="${JAVA_FLAGS:--XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256M}"
+            ;;
+        forge)
+            # Forge may need more metaspace and different GC
+            JAVA_FLAGS="${JAVA_FLAGS:--XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=512M}"
+            ;;
+        fabric|forge|paper|purpur|spigot|bukkit|vanilla)
+            # generic fallback
+            :
+            ;;
+        *)
+            # unknown type, keep default
+            :
+            ;;
+    esac
+}
+# Apply type-specific flags if JAVA_FLAGS not explicitly set by user
+if [ -z "${JAVA_FLAGS+x}" ]; then
+    set_java_flags_by_type
+fi
 
 # Auto-detect server jar
 if [ -n "$SERVER_JAR" ]; then
@@ -108,6 +138,7 @@ do_start() {
     echo "    Port:    $(get_port)"
     echo "    RAM:     $JAVA_XMS - $JAVA_XMX"
     echo "    Backend: $BACKEND"
+    echo "    Java Flags: $JAVA_FLAGS"
 
     case "$BACKEND" in
         tmux)
@@ -473,58 +504,184 @@ do_plugins() {
 }
 
 # ═══════════════════════════════════════════
+#  Interactive menu
+# ═══════════════════════════════════════════
+show_menu() {
+    while true; do
+        clear
+        echo "=== Minecraft Server Manager ==="
+        echo "Server: $SERVER_TYPE"
+        echo "Jar:    $JAR"
+        echo "Backend: $BACKEND"
+        echo "RAM:    $JAVA_XMS - $JAVA_XMX"
+        echo "Java Flags: $JAVA_FLAGS"
+        echo ""
+        echo "1) Start server"
+        echo "2) Stop server"
+        echo "3) Restart server"
+        echo "4) Status"
+        echo "5) Console / Attach"
+        echo "6) Configure server.properties"
+        echo "7) Stats / Monitor"
+        echo "8) World backup/restore"
+        echo "9) Plugin management (Modrinth)"
+        echo "10) Send command to server"
+        echo "11) Change backend (tmux/screen/nohup)"
+        echo "12) Change Java memory (XMS/XMX)"
+        echo "13) Exit"
+        echo ""
+        read -p "Pilih opsi [1-13]: " choice
+        case "$choice" in
+            1) do_start ;;
+            2) do_stop ;;
+            3) do_stop; sleep 2; do_start ;;
+            4) do_status ;;
+            5) do_console ;;
+            6)
+                echo "Config menu:"
+                echo "  a) Lihat semua properti"
+                echo "  b) Ambil nilai properti"
+                echo "  c) Set properti"
+                echo "  d) Bantuan"
+                read -p "Pilih [a-d]: " subc
+                case "$subc" in
+                    a) do_config ;;
+                    b)
+                        read -p "Key: " key
+                        do_config get "$key"
+                        ;;
+                    c)
+                        read -p "Key: " key
+                        read -p "Value: " val
+                        do_config set "$key" "$val"
+                        ;;
+                    d) do_config help ;;
+                    *) echo "Pilihan tidak valid." ;;
+                esac
+                read -p "Tekan Enter untuk lanjut..." ;;
+            7) do_stats ;;
+            8)
+                echo "World menu:"
+                echo "  a) Backup world"
+                echo "  b) Restore world"
+                echo "  c) Daftar backup"
+                echo "  d) Hapus backup"
+                read -p "Pilih [a-d]: " subc
+                case "$subc" in
+                    a)
+                        read -p "Label (kosong untuk manual): " label
+                        do_world backup "$label"
+                        ;;
+                    b)
+                        ls -1t "$WORLD_BACKUP_DIR"/*.tar.gz 2>/dev/null | head -5
+                        read -p "File backup (path lengkap atau hanya nama): " file
+                        # if only filename given, prepend dir
+                        if [[ "$file" != */* ]]; then
+                            file="$WORLD_BACKUP_DIR/$file"
+                        fi
+                        do_world restore "$file"
+                        ;;
+                    c) do_world list ;;
+                    d)
+                        ls -1t "$WORLD_BACKUP_DIR"/*.tar.gz 2>/dev/null | head -5
+                        read -p "File backup untuk dihapus: " file
+                        if [[ "$file" != */* ]]; then
+                            file="$WORLD_BACKUP_DIR/$file"
+                        fi
+                        do_world delete "$(basename "$file")"
+                        ;;
+                    *) echo "Pilihan tidak valid." ;;
+                esac
+                read -p "Tekan Enter untuk lanjut..." ;;
+            9) shift; do_plugins "$@" ;;
+            10)
+                read -p "Perintah yang akan dikirim: " cmd
+                do_send "$cmd"
+                read -p "Tekan Enter untuk lanjut..." ;;
+            11)
+                echo "Backend saat ini: $BACKEND"
+                echo "Pilih backend baru:"
+                echo "  1) tmux"
+                echo "  2) screen"
+                echo "  3) nohup"
+                read -p "Pilih [1-3]: " be
+                case "$be" in
+                    1) export FORCE_BACKEND=tmux ;;
+                    2) export FORCE_BACKEND=screen ;;
+                    3) export FORCE_BACKEND=nohup ;;
+                    *) echo "Pilihan tidak valid." ;;
+                esac
+                echo "Backend akan berlaku pada perintah berikutnya."
+                read -p "Tekan Enter untuk lanjut..." ;;
+            12)
+                echo "RAM saat ini: XMS=$JAVA_XMS, XMX=$JAVA_XMX"
+                read -p "XMS (misal 1G): " xms
+                read -p "XMX (misal 2G): " xmx
+                if [ -n "$xms" ]; then export JAVA_XMS="$xms"; fi
+                if [ -n "$xmx" ]; then export JAVA_XMX="$xmx"; fi
+                echo "RAM akan diperbarui pada start berikutnya."
+                read -p "Tekan Enter untuk lanjut..." ;;
+            13)
+                echo "Keluar..."
+                break
+                ;;
+            *) echo "Pilihan tidak valid." ; read -p "Tekan Enter untuk lanjut..." ;;
+        esac
+    done
+}
+
+# ═══════════════════════════════════════════
 #  Entry point
 # ═══════════════════════════════════════════
-case "${1}" in
-    start)          do_start ;;
-    stop)           do_stop ;;
-    restart)        do_stop; sleep 2; do_start ;;
-    status)         do_status ;;
-    console|attach) do_console ;;
-    config)         do_config "$@" ;;
-    stats|monitor)  do_stats ;;
-    world)          do_world "$@" ;;
-    send|cmd)       do_send "$@" ;;
-    plugins|plugin) shift; do_plugins "$@" ;;
-    *)
-        echo "Usage: $0 {command}"
-        echo ""
-        echo "Server:"
-        echo "  start              Start server"
-        echo "  stop               Stop server"
-        echo "  restart            Restart server"
-        echo "  status             Server status"
-        echo "  console            Attach to console"
-        echo "  send <cmd>         Send command to server"
-        echo ""
-        echo "Config:"
-        echo "  config             Show all properties"
-        echo "  config get <key>   Read a property"
-        echo "  config set <key> <val>  Set a property"
-        echo ""
-        echo "Monitoring:"
-        echo "  stats              RAM, PID, threads, RCON info"
-        echo ""
-        echo "World:"
-        echo "  world backup [label]  Backup world"
-        echo "  world restore <file>  Restore world"
-        echo "  world list            List world backups"
-        echo "  world delete <file>   Delete a backup"
-        echo ""
-        echo "Plugins:"
-        echo "  plugins search <q>    Search Modrinth"
-        echo "  plugins install <slug>  Install plugin"
-        echo "  plugins remove <slug>   Remove plugin"
-        echo "  plugins list          List installed"
-        echo "  plugins update        Update all"
-        echo ""
-        echo "Env vars:"
-        echo "  JAVA_XMS       Min RAM       (default: 1G)"
-        echo "  JAVA_XMX       Max RAM       (default: 2G)"
-        echo "  JAVA_FLAGS     JVM flags     (default: G1GC tuning)"
-        echo "  SERVER_JAR     Jar filename  (auto-detected)"
-        echo "  SESSION_NAME   Screen/tmux name (default: minecraft)"
-        echo "  FORCE_BACKEND  tmux|screen|nohup (auto-detected)"
-        echo "  WORLD_BACKUP_DIR  World backup location (default: ./world-backups)"
-        ;;
-esac
+if [ -z "$1" ]; then
+    # No arguments -> show interactive menu
+    show_menu
+else
+    case "$1" in
+        start)          do_start ;;
+        stop)           do_stop ;;
+        restart)        do_stop; sleep 2; do_start ;;
+        status)         do_status ;;
+        console|attach) do_console ;;
+        config)         do_config "$@" ;;
+        stats|monitor)  do_stats ;;
+        world)          do_world "$@" ;;
+        send|cmd)       do_send "$@" ;;
+        plugins|plugin) shift; do_plugins "$@" ;;
+        *)
+            echo "Usage: $0 {command}"
+            echo ""
+            echo "Server:"
+            echo "  start              Start server"
+            echo "  stop               Stop server"
+            echo "  restart            Restart server"
+            echo "  status             Server status"
+            echo "  console            Attach to console"
+            echo "  send <cmd>         Send command to server"
+            echo ""
+            echo "Config:"
+            echo "  config             Show all properties"
+            echo "  config get <key>   Read a property"
+            echo "  config set <key> <val>  Set a property"
+            echo ""
+            echo "Monitoring:"
+            echo "  stats              RAM, PID, threads, RCON info"
+            echo ""
+            echo "World:"
+            echo "  world backup [label]  Backup world"
+            echo "  world restore <file>  Restore world"
+            echo "  world list            List world backups"
+            echo "  world delete <file>   Delete a backup"
+            echo ""
+            echo "Plugins:"
+            echo "  plugins search <q>    Search Modrinth"
+            echo "  plugins install <slug>  Install plugin"
+            echo "  plugins remove <slug>   Remove plugin"
+            echo "  plugins list          List installed"
+            echo "  plugins update        Update all"
+            echo ""
+            echo "Interactive mode:"
+            echo "  (no arguments)       Show menu"
+            ;;
+    esac
+fi
