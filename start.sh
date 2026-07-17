@@ -77,10 +77,10 @@ set_java_flags_by_type() {
         paper|purpur)
             JAVA_FLAGS="$DEFAULT_JAVA_FLAGS"
             ;;
-        fabric)
+        fabric|quilt)
             JAVA_FLAGS="-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256M"
             ;;
-        forge)
+        forge|neoforge)
             JAVA_FLAGS="-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=512M"
             ;;
         *)
@@ -104,7 +104,7 @@ if [ -n "$SERVER_JAR" ]; then
 elif [ -n "$SERVER_JAR_VAL" ]; then
     JAR="$SERVER_JAR_VAL"
 else
-    JAR="$(ls -1 paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
+    JAR="$(ls -1 mc-launch.sh quilt-server-launch.jar paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
 fi
 
 # ═══════════════════════════════════════════
@@ -162,7 +162,7 @@ refresh_runtime_from_mcinfo() {
     elif [ -n "$SERVER_JAR_VAL" ]; then
         JAR="$SERVER_JAR_VAL"
     else
-        JAR="$(ls -1 paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
+        JAR="$(ls -1 mc-launch.sh quilt-server-launch.jar paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
     fi
 
     case "${FORCE_BACKEND:-${MCINFO_BACKEND:-}}" in
@@ -204,6 +204,32 @@ send_cmd() {
     esac
 }
 
+is_launcher_script() {
+    case "$JAR" in
+        *.sh) [ -f "$JAR" ] ;;
+        *)    return 1 ;;
+    esac
+}
+
+build_launch_command() {
+    if is_launcher_script; then
+        printf 'cd %q && MC_JAVA_FLAGS=%q MC_JAVA_XMS=%q MC_JAVA_XMX=%q bash %q nogui' \
+            "$SCRIPT_DIR" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAR"
+    else
+        printf 'cd %q && java %s -Xms%q -Xmx%q -jar %q nogui' \
+            "$SCRIPT_DIR" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAR"
+    fi
+}
+
+launch_foreground() {
+    if is_launcher_script; then
+        MC_JAVA_FLAGS="$JAVA_FLAGS" MC_JAVA_XMS="$JAVA_XMS" MC_JAVA_XMX="$JAVA_XMX" \
+            bash "$JAR" nogui
+    else
+        java $JAVA_FLAGS -Xms"$JAVA_XMS" -Xmx"$JAVA_XMX" -jar "$JAR" nogui
+    fi
+}
+
 # ═══════════════════════════════════════════
 #  Commands: start/stop/restart/status/console
 # ═══════════════════════════════════════════
@@ -223,18 +249,21 @@ do_start() {
     echo "    Backend: $BACKEND"
     echo "    Java Flags: $JAVA_FLAGS"
 
+    local LAUNCH_CMD
+    LAUNCH_CMD="$(build_launch_command)"
+
     case "$BACKEND" in
         tmux)
-            tmux new-session -d -s "$SESSION_NAME" "java $JAVA_FLAGS -Xms$JAVA_XMS -Xmx$JAVA_XMX -jar $JAR nogui"
+            tmux new-session -d -s "$SESSION_NAME" "$LAUNCH_CMD"
             echo "    Attach: tmux attach -t $SESSION_NAME"
             ;;
         screen)
-            screen -dmS "$SESSION_NAME" java $JAVA_FLAGS -Xms"$JAVA_XMS" -Xmx"$JAVA_XMX" -jar "$JAR" nogui
+            screen -dmS "$SESSION_NAME" bash -lc "$LAUNCH_CMD"
             echo "    Attach: screen -r $SESSION_NAME"
             ;;
         nohup)
             mkdir -p logs
-            nohup java $JAVA_FLAGS -Xms"$JAVA_XMS" -Xmx"$JAVA_XMX" -jar "$JAR" nogui > logs/console.log 2>&1 &
+            nohup bash -lc "$LAUNCH_CMD" > logs/console.log 2>&1 &
             echo $! > "$PID_FILE"
             echo "    Log: tail -f logs/console.log"
             ;;
@@ -273,7 +302,7 @@ do_run() {
         echo "    Java Flags: $JAVA_FLAGS"
         echo ""
 
-        java $JAVA_FLAGS -Xms"$JAVA_XMS" -Xmx"$JAVA_XMX" -jar "$JAR" nogui
+        launch_foreground
 
         if [ "$AUTO_RESTART" = "true" ]; then
             echo "[WARN] Server berhenti. Restart lagi dalam 1 detik..."

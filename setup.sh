@@ -1,6 +1,6 @@
 #!/bin/bash
 # mc-server setup — All-in-one Minecraft server setup
-# Supports: fabric, paper, purpur
+# Supports: fabric, forge, neoforge, paper, purpur, quilt
 # Usage: ./setup.sh --type paper --version 1.21.4
 #        ./setup.sh --type fabric
 #        ./setup.sh --type purpur --version 1.21.4
@@ -35,7 +35,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --type TYPE       Server type: bukkit, spigot, paper, purpur, fabric (required)"
+            echo "  --type TYPE       Server type: bukkit, spigot, paper, purpur, fabric, forge, neoforge, quilt (required)"
             echo "  --version VER     Minecraft version (default: latest)"
             echo "  --dir DIR         Install directory (default: ./<type>-server)"
             echo "  --build NUM       Paper: specific build number"
@@ -47,6 +47,9 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --type paper --version 1.21.4"
             echo "  $0 --type fabric --version 1.21.4"
             echo "  $0 --type purpur --version 1.21.4"
+            echo "  $0 --type forge --version 1.21.4"
+            echo "  $0 --type neoforge --version 1.21.4"
+            echo "  $0 --type quilt --version 1.21.4"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -67,14 +70,20 @@ if [ -z "$SERVER_TYPE" ]; then
     echo "  3) Paper    — Performance + Bukkit/Spigot plugin support"
     echo "  4) Purpur   — Paper + extra configurability"
     echo "  5) Fabric   — Mod loader (mods, not plugins)"
+    echo "  6) Forge    — Classic mod loader"
+    echo "  7) NeoForge — Modern Forge fork for modded servers"
+    echo "  8) Quilt    — Lightweight mod loader"
     echo ""
-    read -rp "Pilih [1/2/3/4/5]: " choice
+    read -rp "Pilih [1/2/3/4/5/6/7/8]: " choice
     case "$choice" in
         1) SERVER_TYPE="bukkit" ;;
         2) SERVER_TYPE="spigot" ;;
         3) SERVER_TYPE="paper" ;;
         4) SERVER_TYPE="purpur" ;;
         5) SERVER_TYPE="fabric" ;;
+        6) SERVER_TYPE="forge" ;;
+        7) SERVER_TYPE="neoforge" ;;
+        8) SERVER_TYPE="quilt" ;;
         *) echo "Invalid choice"; exit 1 ;;
     esac
 
@@ -142,7 +151,7 @@ else:
                     read -rp "Minecraft version [latest]: " MC_VERSION
                 fi
                 ;;
-            fabric)
+            fabric|quilt)
                 VERSIONS_JSON=$(curl -s "https://meta.fabricmc.net/v2/versions/game")
                 VERSIONS=$(python3 -c "
 import sys, json
@@ -174,6 +183,102 @@ print(stable[0]['version'] if stable else '')
                     read -rp "Minecraft version [latest]: " MC_VERSION
                 fi
                 ;;
+            forge)
+                VERSIONS_XML=$(curl -s "https://maven.minecraftforge.net/releases/net/minecraftforge/forge/maven-metadata.xml")
+                VERSIONS=$(python3 -c "
+import sys
+from xml.etree import ElementTree as ET
+root = ET.fromstring(sys.stdin.read())
+raw = [node.text for node in root.findall('.//version') if node.text]
+seen = set()
+ordered = []
+for value in reversed(raw):
+    mc_version = value.split('-', 1)[0]
+    if mc_version not in seen:
+        seen.add(mc_version)
+        ordered.append(mc_version)
+for value in ordered:
+    print(value)
+" <<< "$VERSIONS_XML" 2>/dev/null)
+
+                LATEST_VER=$(python3 -c "
+import sys
+from xml.etree import ElementTree as ET
+root = ET.fromstring(sys.stdin.read())
+release = root.findtext('.//release', '')
+print(release.split('-', 1)[0] if release else '')
+" <<< "$VERSIONS_XML" 2>/dev/null)
+
+                if [ -n "$VERSIONS" ]; then
+                    echo ""
+                    echo "Available versions:"
+                    echo "$VERSIONS" | while read -r VER; do
+                        echo "  > $VER"
+                    done
+                    echo ""
+
+                    read -rp "Ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
+                    MC_VERSION="${VERSION_INPUT:-$LATEST_VER}"
+                else
+                    read -rp "Minecraft version [latest]: " MC_VERSION
+                fi
+                ;;
+            neoforge)
+                VERSIONS_XML=$(curl -s "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml")
+                VERSIONS=$(python3 -c "
+import sys
+from xml.etree import ElementTree as ET
+root = ET.fromstring(sys.stdin.read())
+raw = [node.text for node in root.findall('.//version') if node.text]
+seen = set()
+ordered = []
+for value in reversed(raw):
+    base = value.split('-', 1)[0]
+    parts = base.split('.')
+    if not parts:
+        continue
+    if parts[0] in {'20', '21'} and len(parts) >= 2:
+        mc_version = f'1.{parts[0]}.{parts[1]}'
+    elif len(parts) >= 2:
+        mc_version = '.'.join(parts[:-1])
+    else:
+        mc_version = base
+    if mc_version not in seen:
+        seen.add(mc_version)
+        ordered.append(mc_version)
+for value in ordered:
+    print(value)
+" <<< "$VERSIONS_XML" 2>/dev/null)
+
+                LATEST_VER=$(python3 -c "
+import sys
+from xml.etree import ElementTree as ET
+root = ET.fromstring(sys.stdin.read())
+release = root.findtext('.//release', '') or root.findtext('.//latest', '')
+base = release.split('-', 1)[0]
+parts = base.split('.')
+if parts and parts[0] in {'20', '21'} and len(parts) >= 2:
+    print(f'1.{parts[0]}.{parts[1]}')
+elif len(parts) >= 2:
+    print('.'.join(parts[:-1]))
+else:
+    print(base)
+" <<< "$VERSIONS_XML" 2>/dev/null)
+
+                if [ -n "$VERSIONS" ]; then
+                    echo ""
+                    echo "Available versions:"
+                    echo "$VERSIONS" | while read -r VER; do
+                        echo "  > $VER"
+                    done
+                    echo ""
+
+                    read -rp "Ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
+                    MC_VERSION="${VERSION_INPUT:-$LATEST_VER}"
+                else
+                    read -rp "Minecraft version [latest]: " MC_VERSION
+                fi
+                ;;
             bukkit|spigot)
                 echo "  Bukkit/Spigot: versi harus di-compile via BuildTools"
                 read -rp "Minecraft version (wajib, contoh: 1.21.4): " MC_VERSION
@@ -188,8 +293,8 @@ fi
 
 # Validate type
 case "$SERVER_TYPE" in
-    bukkit|spigot|paper|purpur|fabric) ;;
-    *) echo "Error: --type must be bukkit|spigot|paper|purpur|fabric"; exit 1 ;;
+    bukkit|spigot|paper|purpur|fabric|forge|neoforge|quilt) ;;
+    *) echo "Error: --type must be bukkit|spigot|paper|purpur|fabric|forge|neoforge|quilt"; exit 1 ;;
 esac
 
 INSTALL_DIR="${INSTALL_DIR:-./${SERVER_TYPE}-server}"
@@ -223,6 +328,86 @@ accept_eula() {
     else
         echo "eula=true" > eula.txt
     fi
+}
+
+create_modloader_wrapper() {
+    local UNIX_ARGS_FILE
+    UNIX_ARGS_FILE=$(find "$INSTALL_DIR/libraries" -type f -name "unix_args.txt" 2>/dev/null | sort | tail -1)
+    if [ -z "$UNIX_ARGS_FILE" ]; then
+        echo "Error: Failed to locate unix_args.txt in $INSTALL_DIR/libraries"
+        exit 1
+    fi
+
+    local RELATIVE_UNIX_ARGS="./${UNIX_ARGS_FILE#$INSTALL_DIR/}"
+
+    cat > "$INSTALL_DIR/mc-launch.sh" << EOF
+#!/bin/bash
+set -e
+SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+cd "\$SCRIPT_DIR"
+
+JAVA_BIN="\${JAVA_BIN:-java}"
+TMP_ARGS_FILE="\$SCRIPT_DIR/.mc-jvm-args.tmp"
+trap 'rm -f "\$TMP_ARGS_FILE"' EXIT
+: > "\$TMP_ARGS_FILE"
+
+if [ -n "\${MC_JAVA_XMS:-}" ]; then
+    echo "-Xms\${MC_JAVA_XMS}" >> "\$TMP_ARGS_FILE"
+fi
+
+if [ -n "\${MC_JAVA_XMX:-}" ]; then
+    echo "-Xmx\${MC_JAVA_XMX}" >> "\$TMP_ARGS_FILE"
+fi
+
+if [ -n "\${MC_JAVA_FLAGS:-}" ]; then
+    MC_JAVA_FLAGS="\$MC_JAVA_FLAGS" python3 - "\$TMP_ARGS_FILE" << 'PY'
+import os
+import shlex
+import sys
+
+flags = os.environ.get("MC_JAVA_FLAGS", "")
+with open(sys.argv[1], "a", encoding="utf-8") as fh:
+    for item in shlex.split(flags):
+        fh.write(item + "\\n")
+PY
+fi
+
+if [ "\$#" -eq 0 ]; then
+    set -- nogui
+fi
+
+if [ -f "./user_jvm_args.txt" ]; then
+    exec "\$JAVA_BIN" @"\$TMP_ARGS_FILE" @./user_jvm_args.txt @"$RELATIVE_UNIX_ARGS" "\$@"
+else
+    exec "\$JAVA_BIN" @"\$TMP_ARGS_FILE" @"$RELATIVE_UNIX_ARGS" "\$@"
+fi
+EOF
+
+    chmod +x "$INSTALL_DIR/mc-launch.sh"
+}
+
+resolve_latest_stable_game_version() {
+    curl -s "https://meta.fabricmc.net/v2/versions/game" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+stable = [x for x in data if x.get('stable')]
+print(stable[0]['version'] if stable else data[0]['version'])
+" 2>/dev/null
+}
+
+derive_neoforge_mc_version() {
+    python3 - "$1" << 'PY'
+import sys
+
+value = sys.argv[1].split('-', 1)[0]
+parts = value.split('.')
+if parts and parts[0] in {'20', '21'} and len(parts) >= 2:
+    print(f"1.{parts[0]}.{parts[1]}")
+elif len(parts) >= 2:
+    print('.'.join(parts[:-1]))
+else:
+    print(value)
+PY
 }
 
 # ═══════════════════════════════════════════════
@@ -417,6 +602,181 @@ print(stable[0]['version'] if stable else data[0]['version'])
 }
 
 # ═══════════════════════════════════════════════
+#  Download: Forge
+# ═══════════════════════════════════════════════
+download_forge() {
+    local META_URL="https://maven.minecraftforge.net/releases/net/minecraftforge/forge/maven-metadata.xml"
+    local FORGE_VERSION
+
+    echo "[1/5] Resolving Forge version..."
+    FORGE_VERSION=$(curl -s "$META_URL" | python3 -c "
+import sys
+from xml.etree import ElementTree as ET
+
+target = '''$MC_VERSION'''.strip()
+root = ET.fromstring(sys.stdin.read())
+versions = [node.text for node in root.findall('.//version') if node.text]
+
+prefixes = []
+if target:
+    prefixes.append(target)
+    if target.startswith('1.'):
+        prefixes.append(target[2:])
+    else:
+        prefixes.append('1.' + target)
+
+selected = ''
+for prefix in prefixes:
+    matches = [v for v in versions if v == prefix or v.startswith(prefix + '-') or v.startswith(prefix + '.')]
+    if matches:
+        selected = matches[-1]
+        break
+
+if not selected:
+    selected = root.findtext('.//release', '') or root.findtext('.//latest', '')
+
+print(selected)
+" 2>/dev/null)
+
+    if [ -z "$FORGE_VERSION" ]; then
+        echo "Error: Failed to resolve Forge version"
+        exit 1
+    fi
+
+    if [ -z "$MC_VERSION" ]; then
+        MC_VERSION="${FORGE_VERSION%%-*}"
+    fi
+
+    local INSTALLER_JAR="forge-${FORGE_VERSION}-installer.jar"
+    local INSTALLER_URL="https://maven.minecraftforge.net/net/minecraftforge/forge/${FORGE_VERSION}/${INSTALLER_JAR}"
+
+    echo "  MC Version: $MC_VERSION"
+    echo "  Forge:      $FORGE_VERSION"
+    echo "[2/5] Downloading Forge installer..."
+    mkdir -p "$INSTALL_DIR"
+    curl --progress-bar -# -o "$INSTALL_DIR/$INSTALLER_JAR" "$INSTALLER_URL"
+
+    echo "[3/5] Installing Forge server..."
+    cd "$INSTALL_DIR"
+    java -jar "$INSTALLER_JAR" --installServer
+
+    echo "[4/5] Creating launcher wrapper..."
+    rm -f "$INSTALLER_JAR"
+    create_modloader_wrapper
+
+    SERVER_JAR="mc-launch.sh"
+    echo "  Done: $SERVER_JAR"
+}
+
+# ═══════════════════════════════════════════════
+#  Download: NeoForge
+# ═══════════════════════════════════════════════
+download_neoforge() {
+    local META_URL="https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"
+    local NEOFORGE_VERSION
+
+    echo "[1/5] Resolving NeoForge version..."
+    NEOFORGE_VERSION=$(curl -s "$META_URL" | python3 -c "
+import sys
+from xml.etree import ElementTree as ET
+
+target = '''$MC_VERSION'''.strip()
+root = ET.fromstring(sys.stdin.read())
+versions = [node.text for node in root.findall('.//version') if node.text]
+
+prefixes = []
+if target:
+    prefixes.append(target)
+    if target.startswith('1.'):
+        parts = target.split('.')
+        if len(parts) >= 3:
+            prefixes.append(f'{parts[1]}.{parts[2]}')
+        prefixes.append(target[2:])
+
+selected = ''
+for prefix in prefixes:
+    matches = [v for v in versions if v == prefix or v.startswith(prefix + '.') or v.startswith(prefix + '-')]
+    if matches:
+        selected = matches[-1]
+        break
+
+if not selected:
+    selected = root.findtext('.//release', '') or root.findtext('.//latest', '')
+
+print(selected)
+" 2>/dev/null)
+
+    if [ -z "$NEOFORGE_VERSION" ]; then
+        echo "Error: Failed to resolve NeoForge version"
+        exit 1
+    fi
+
+    if [ -z "$MC_VERSION" ]; then
+        MC_VERSION="$(derive_neoforge_mc_version "$NEOFORGE_VERSION")"
+    fi
+
+    local INSTALLER_JAR="neoforge-${NEOFORGE_VERSION}-installer.jar"
+    local INSTALLER_URL="https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEOFORGE_VERSION}/${INSTALLER_JAR}"
+
+    echo "  MC Version: $MC_VERSION"
+    echo "  NeoForge:   $NEOFORGE_VERSION"
+    echo "[2/5] Downloading NeoForge installer..."
+    mkdir -p "$INSTALL_DIR"
+    curl --progress-bar -# -o "$INSTALL_DIR/$INSTALLER_JAR" "$INSTALLER_URL"
+
+    echo "[3/5] Installing NeoForge server..."
+    cd "$INSTALL_DIR"
+    java -jar "$INSTALLER_JAR" --installServer
+
+    echo "[4/5] Creating launcher wrapper..."
+    rm -f "$INSTALLER_JAR"
+    create_modloader_wrapper
+
+    SERVER_JAR="mc-launch.sh"
+    echo "  Done: $SERVER_JAR"
+}
+
+# ═══════════════════════════════════════════════
+#  Download: Quilt
+# ═══════════════════════════════════════════════
+download_quilt() {
+    local INSTALLER_URL="https://quiltmc.org/api/v1/download-latest-installer/java-universal"
+    local INSTALLER_JAR="quilt-installer.jar"
+
+    if [ -z "$MC_VERSION" ]; then
+        echo "[1/5] Resolving latest Minecraft version..."
+        MC_VERSION="$(resolve_latest_stable_game_version)"
+    fi
+    echo "  MC Version: $MC_VERSION"
+
+    echo "[2/5] Downloading Quilt installer..."
+    mkdir -p "$INSTALL_DIR"
+    curl --progress-bar -# -o "$INSTALL_DIR/$INSTALLER_JAR" "$INSTALLER_URL"
+
+    echo "[3/5] Installing Quilt server..."
+    cd "$INSTALL_DIR"
+    java -jar "$INSTALLER_JAR" install server "$MC_VERSION" --download-server
+
+    if [ -d "$INSTALL_DIR/server" ]; then
+        echo "[4/5] Flattening Quilt server directory..."
+        shopt -s dotglob nullglob
+        mv "$INSTALL_DIR/server"/* "$INSTALL_DIR/"
+        shopt -u dotglob nullglob
+        rmdir "$INSTALL_DIR/server"
+    fi
+
+    rm -f "$INSTALLER_JAR"
+
+    SERVER_JAR="quilt-server-launch.jar"
+    if [ ! -f "$INSTALL_DIR/$SERVER_JAR" ]; then
+        echo "Error: Quilt launcher jar not found after install"
+        exit 1
+    fi
+
+    echo "  Done: $SERVER_JAR"
+}
+
+# ═══════════════════════════════════════════════
 #  Copy scripts to install dir
 # ═══════════════════════════════════════════════
 copy_scripts() {
@@ -448,13 +808,6 @@ generate_systemd() {
     local ABS_DIR
     ABS_DIR=$(cd "$INSTALL_DIR" && pwd)
 
-    local EXEC_START
-    if command -v screen &>/dev/null; then
-        EXEC_START="/usr/bin/screen -dmS ${SESSION_NAME} java -Xms1G -Xmx2G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -jar ${ABS_DIR}/${SERVER_JAR} nogui"
-    else
-        EXEC_START="/bin/bash -c 'cd ${ABS_DIR} && nohup java -Xms1G -Xmx2G -jar ${SERVER_JAR} nogui > logs/console.log 2>&1 & echo \$! > .server.pid'"
-    fi
-
     cat > "$INSTALL_DIR/${SERVICE_NAME}.service" << EOF
 [Unit]
 Description=${SERVER_TYPE^^} Minecraft Server (MC ${MC_VERSION})
@@ -467,7 +820,7 @@ Type=forking
 User=$(whoami)
 Group=$(id -gn)
 WorkingDirectory=${ABS_DIR}
-ExecStart=${EXEC_START}
+ExecStart=/bin/bash -c 'cd ${ABS_DIR} && ./start.sh start'
 ExecStop=/bin/bash -c 'cd ${ABS_DIR} && ./start.sh stop'
 Restart=on-failure
 RestartSec=30
@@ -508,6 +861,15 @@ case "$SERVER_TYPE" in
         # download_fabric creates .fabric-jar-temp
         SERVER_JAR=$(cat "$INSTALL_DIR/.fabric-jar-temp" 2>/dev/null || echo "")
         rm -f "$INSTALL_DIR/.fabric-jar-temp"
+        ;;
+    forge)
+        download_forge
+        ;;
+    neoforge)
+        download_neoforge
+        ;;
+    quilt)
+        download_quilt
         ;;
 esac
 
