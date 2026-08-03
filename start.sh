@@ -16,6 +16,24 @@ DEFAULT_JAVA_FLAGS="-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMilli
 SESSION_NAME="${SESSION_NAME:-minecraft}"
 PID_FILE=".server.pid"
 
+# Resolve Java binary path by version
+# Usage: JAVA_BIN=$(resolve_java_bin "$JAVA_VERSION")
+# Maps: 8 -> /usr/lib/jvm/java-8-openjdk-amd64/bin/java
+# Falls back to system 'java' if version not found or JAVA_VERSION empty
+resolve_java_bin() {
+    local VER="$1"
+    if [ -z "$VER" ]; then
+        echo "java"
+        return
+    fi
+    local CANDIDATE="/usr/lib/jvm/java-${VER}-openjdk-amd64/bin/java"
+    if [ -x "$CANDIDATE" ]; then
+        echo "$CANDIDATE"
+    else
+        echo "java"
+    fi
+}
+
 mcinfo_get() {
     local KEY="$1"
     [ -f "$INFO_FILE" ] || return 1
@@ -60,6 +78,7 @@ reload_mcinfo_values() {
     MCINFO_XMX="$(mcinfo_get xmx 2>/dev/null || true)"
     MCINFO_AUTO_RESTART="$(mcinfo_get auto_restart 2>/dev/null || true)"
     MCINFO_JAVA_FLAGS="$(mcinfo_get java_flags 2>/dev/null || true)"
+    MCINFO_JAVA_VERSION="$(mcinfo_get java_version 2>/dev/null || true)"
 }
 
 reload_mcinfo_values
@@ -70,6 +89,8 @@ SERVER_JAR_VAL="${SERVER_JAR_VAL:-${MCINFO_SERVER_JAR:-}}"
 JAVA_XMS="${JAVA_XMS:-${MCINFO_XMS:-1G}}"
 JAVA_XMX="${JAVA_XMX:-${MCINFO_XMX:-2G}}"
 AUTO_RESTART="${AUTO_RESTART:-${MCINFO_AUTO_RESTART:-false}}"
+JAVA_VERSION="${JAVA_VERSION:-${MCINFO_JAVA_VERSION:-}}"
+JAVA_BIN="$(resolve_java_bin "$JAVA_VERSION")"
 
 # Set default Java flags based on server type
 set_java_flags_by_type() {
@@ -150,6 +171,8 @@ refresh_runtime_from_mcinfo() {
     JAVA_XMS="${MCINFO_XMS:-1G}"
     JAVA_XMX="${MCINFO_XMX:-2G}"
     AUTO_RESTART="${MCINFO_AUTO_RESTART:-false}"
+    JAVA_VERSION="${MCINFO_JAVA_VERSION:-}"
+    JAVA_BIN="$(resolve_java_bin "$JAVA_VERSION")"
 
     if [ -n "$MCINFO_JAVA_FLAGS" ]; then
         JAVA_FLAGS="$MCINFO_JAVA_FLAGS"
@@ -213,20 +236,20 @@ is_launcher_script() {
 
 build_launch_command() {
     if is_launcher_script; then
-        printf 'cd %q && MC_JAVA_FLAGS=%q MC_JAVA_XMS=%q MC_JAVA_XMX=%q bash %q nogui' \
-            "$SCRIPT_DIR" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAR"
+        printf 'cd %q && MC_JAVA_FLAGS=%q MC_JAVA_XMS=%q MC_JAVA_XMX=%q MC_JAVA_BIN=%q bash %q nogui' \
+            "$SCRIPT_DIR" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAVA_BIN" "$JAR"
     else
-        printf 'cd %q && java %s -Xms%q -Xmx%q -jar %q nogui' \
-            "$SCRIPT_DIR" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAR"
+        printf 'cd %q && %q %s -Xms%q -Xmx%q -jar %q nogui' \
+            "$SCRIPT_DIR" "$JAVA_BIN" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAR"
     fi
 }
 
 launch_foreground() {
     if is_launcher_script; then
-        MC_JAVA_FLAGS="$JAVA_FLAGS" MC_JAVA_XMS="$JAVA_XMS" MC_JAVA_XMX="$JAVA_XMX" \
+        MC_JAVA_FLAGS="$JAVA_FLAGS" MC_JAVA_XMS="$JAVA_XMS" MC_JAVA_XMX="$JAVA_XMX" MC_JAVA_BIN="$JAVA_BIN" \
             bash "$JAR" nogui
     else
-        java $JAVA_FLAGS -Xms"$JAVA_XMS" -Xmx"$JAVA_XMX" -jar "$JAR" nogui
+        "$JAVA_BIN" $JAVA_FLAGS -Xms"$JAVA_XMS" -Xmx"$JAVA_XMX" -jar "$JAR" nogui
     fi
 }
 
@@ -247,6 +270,7 @@ do_start() {
     echo "    Port:    $(get_port)"
     echo "    RAM:     $JAVA_XMS - $JAVA_XMX"
     echo "    Backend: $BACKEND"
+    echo "    Java:    ${JAVA_VERSION:-system} ($JAVA_BIN)"
     echo "    Java Flags: $JAVA_FLAGS"
 
     local LAUNCH_CMD
@@ -299,6 +323,7 @@ do_run() {
         echo "    Port:    $(get_port)"
         echo "    RAM:     $JAVA_XMS - $JAVA_XMX"
         echo "    Backend: direct"
+        echo "    Java:    ${JAVA_VERSION:-system} ($JAVA_BIN)"
         echo "    Java Flags: $JAVA_FLAGS"
         echo ""
 
@@ -740,6 +765,7 @@ print_usage() {
     echo "Env vars:"
     echo "  JAVA_XMS          Min RAM               (default: 1G)"
     echo "  JAVA_XMX          Max RAM               (default: 2G)"
+    echo "  JAVA_VERSION      Java version (8/11/17/21) (default: system)"
     echo "  JAVA_FLAGS        JVM flags             (default: G1GC tuning)"
     echo "  AUTO_RESTART      true|false            (default: false)"
     echo "  SERVER_JAR        Jar filename          (auto-detected)"
@@ -759,6 +785,7 @@ show_menu() {
         echo "Jar:    $JAR"
         echo "Backend: $BACKEND"
         echo "RAM:    $JAVA_XMS - $JAVA_XMX"
+        echo "Java:   ${JAVA_VERSION:-system} ($JAVA_BIN)"
         echo "Java Flags: $JAVA_FLAGS"
         echo ""
         echo "1) Start server"
@@ -773,10 +800,11 @@ show_menu() {
         echo "10) Send command to server"
         echo "11) Change backend (tmux/screen/nohup)"
         echo "12) Change Java memory (XMS/XMX)"
-        echo "13) View/Edit .mc-info"
-        echo "14) Exit"
+        echo "13) Change Java version"
+        echo "14) View/Edit .mc-info"
+        echo "15) Exit"
         echo ""
-        read -p "Pilih opsi [1-14]: " choice
+        read -p "Pilih opsi [1-15]: " choice
         case "$choice" in
             1) do_start ;;
             2) do_stop ;;
@@ -876,8 +904,23 @@ show_menu() {
                 fi
                 echo "RAM akan diperbarui pada start berikutnya."
                 read -p "Tekan Enter untuk lanjut..." ;;
-            13) do_mcinfo ;;
-            14)
+            13)
+                echo "Java version saat ini: ${JAVA_VERSION:-system default (21)}"
+                echo "Versi yang tersedia: 8, 11, 17, 21"
+                read -p "Pilih versi Java (kosong untuk system default): " jv
+                if [ -n "$jv" ]; then
+                    JAVA_VERSION="$jv"
+                else
+                    JAVA_VERSION=""
+                fi
+                JAVA_BIN="$(resolve_java_bin "$JAVA_VERSION")"
+                mcinfo_set java_version "$JAVA_VERSION"
+                echo "[OK] Java version=$JAVA_VERSION disimpan ke $INFO_FILE"
+                echo "    Binary: $JAVA_BIN"
+                read -p "Tekan Enter untuk lanjut..."
+                ;;
+            14) do_mcinfo ;;
+            15)
                 echo "Keluar..."
                 break
                 ;;
