@@ -166,7 +166,7 @@ detect_server_jar() {
     fi
 }
 
-JAR="$(detect_server_jar)" || true
+JAR=""
 
 # ═══════════════════════════════════════════
 #  Auto-port kill
@@ -220,7 +220,7 @@ refresh_runtime_from_mcinfo() {
         set_java_flags_by_type
     fi
 
-    JAR="$(detect_server_jar)" || true
+    JAR=""  # reset — only start/run calls detect_server_jar
 
     case "${FORCE_BACKEND:-${MCINFO_BACKEND:-}}" in
         tmux|screen|nohup)
@@ -296,6 +296,7 @@ do_start() {
         return
     fi
 
+    JAR="${SERVER_JAR:-$(detect_server_jar)}" || true
     if [ -z "$JAR" ] || [ ! -f "$JAR" ]; then
         echo "[ERROR] File jar tidak ditemukan: ${JAR:-<empty>}"
         exit 1
@@ -348,6 +349,7 @@ do_run() {
         return
     fi
 
+    JAR="${SERVER_JAR:-$(detect_server_jar)}" || true
     if [ -z "$JAR" ] || [ ! -f "$JAR" ]; then
         echo "[ERROR] File jar tidak ditemukan: ${JAR:-<empty>}"
         exit 1
