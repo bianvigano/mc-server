@@ -119,14 +119,54 @@ if [ -z "${JAVA_FLAGS+x}" ]; then
     set_java_flags_by_type
 fi
 
-# Auto-detect server jar
-if [ -n "$SERVER_JAR" ]; then
-    JAR="$SERVER_JAR"
-elif [ -n "$SERVER_JAR_VAL" ]; then
-    JAR="$SERVER_JAR_VAL"
-else
-    JAR="$(ls -1 mc-launch.sh quilt-server-launch.jar paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
-fi
+# Auto-detect server jar — scan folder untuk *.jar
+# 0 jar  → error
+# 1 jar  → langsung pakai
+# >1 jar → menu pilihan
+detect_server_jar() {
+    if [ -n "$SERVER_JAR" ]; then
+        echo "$SERVER_JAR"
+        return
+    elif [ -n "$SERVER_JAR_VAL" ]; then
+        echo "$SERVER_JAR_VAL"
+        return
+    fi
+
+    # Cek launcher script (.sh) dulu
+    local LAUNCHER
+    LAUNCHER="$(ls -1 mc-launch.sh 2>/dev/null | head -1)"
+    [ -n "$LAUNCHER" ] && { echo "$LAUNCHER"; return; }
+
+    # Scan semua .jar di current directory
+    local JARS=()
+    while IFS= read -r f; do
+        JARS+=("$f")
+    done < <(ls -1 *.jar 2>/dev/null)
+
+    if [ ${#JARS[@]} -eq 0 ]; then
+        return 1
+    elif [ ${#JARS[@]} -eq 1 ]; then
+        echo "${JARS[0]}"
+    else
+        echo "[*] Ditemukan ${#JARS[@]} file jar:" >&2
+        local i=1
+        for jar in "${JARS[@]}"; do
+            echo "  $i) $jar" >&2
+            ((i++))
+        done
+        echo "" >&2
+        local choice
+        read -rp "Pilih jar [1-${#JARS[@]}]: " choice >&2
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le ${#JARS[@]} ]; then
+            echo "${JARS[$((choice-1))]}"
+        else
+            echo "[ERROR] Pilihan tidak valid." >&2
+            return 1
+        fi
+    fi
+}
+
+JAR="$(detect_server_jar)" || true
 
 # ═══════════════════════════════════════════
 #  Auto-port kill
@@ -180,13 +220,7 @@ refresh_runtime_from_mcinfo() {
         set_java_flags_by_type
     fi
 
-    if [ -n "$SERVER_JAR" ]; then
-        JAR="$SERVER_JAR"
-    elif [ -n "$SERVER_JAR_VAL" ]; then
-        JAR="$SERVER_JAR_VAL"
-    else
-        JAR="$(ls -1 mc-launch.sh quilt-server-launch.jar paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)"
-    fi
+    JAR="$(detect_server_jar)" || true
 
     case "${FORCE_BACKEND:-${MCINFO_BACKEND:-}}" in
         tmux|screen|nohup)
@@ -260,6 +294,11 @@ do_start() {
     if is_running; then
         echo "[*] Server sudah jalan ($BACKEND: $SESSION_NAME)"
         return
+    fi
+
+    if [ -z "$JAR" ] || [ ! -f "$JAR" ]; then
+        echo "[ERROR] File jar tidak ditemukan: ${JAR:-<empty>}"
+        exit 1
     fi
 
     auto_kill_port

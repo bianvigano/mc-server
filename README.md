@@ -9,7 +9,7 @@ Supports: **Bukkit**, **Spigot**, **Paper**, **Purpur**, **Fabric**
 - Interactive setup with version list from API
 - Auto-download server jar from official APIs (PaperMC, PurpurMC, Fabric Meta, SpigotMC BuildTools)
 - Accept EULA automatically
-- `start.sh` — Universal launcher with interactive menu, direct run mode, backend auto-detect, and auto-port kill
+- `start.sh` — Universal launcher with interactive menu, direct run mode, backend auto-detect, auto-port kill, and multi-jar detection (pick jar from menu when multiple `.jar` files exist)
 - `start.sh config` — Read/set server.properties from CLI
 - `start.sh stats` — Server monitoring (RAM, PID, threads, TPS via RCON)
 - `start.sh world` — World backup/restore/list
