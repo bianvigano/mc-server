@@ -23,12 +23,24 @@ Supports: **Bukkit**, **Spigot**, **Paper**, **Purpur**, **Fabric**
 
 ## Quick Start
 
+### Setup (install server baru)
+
 ```bash
 # One-file setup (downloads other scripts from GitHub automatically)
 curl -fsSL -o setup.sh https://raw.githubusercontent.com/bianvigano/mc-server/main/setup.sh
 chmod +x setup.sh
 ./setup.sh
 ```
+
+### Stalone start.sh (server sudah ada, butuh launcher doang)
+
+```bash
+curl -fsSL -o start.sh https://raw.githubusercontent.com/bianvigano/mc-server/main/start.sh
+chmod +x start.sh
+./start.sh
+```
+
+Bisa langsung dipakai di folder server yang sudah ada. Auto-detect jar, backend, RAM, dll.
 
 Or with flags:
 
