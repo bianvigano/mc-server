@@ -172,22 +172,45 @@ detect_server_jar() {
 JAR=""
 
 # ═══════════════════════════════════════════
-#  Auto-port kill
+#  Auto-port switch (bukan kill)
 # ═══════════════════════════════════════════
 get_port() {
     grep -E '^server-port=' server.properties 2>/dev/null | cut -d= -f2 || echo "25565"
 }
 
-auto_kill_port() {
+find_free_port() {
+    local P="$1" TRY=0
+    while [ "$TRY" -lt 20 ]; do
+        if ! lsof -ti :"${P}" >/dev/null 2>&1; then
+            echo "$P"
+            return 0
+        fi
+        P=$((P + 1))
+        TRY=$((TRY + 1))
+    done
+    return 1
+}
+
+# ponytail: port bergeser permanen di server.properties; kalau port lama mau
+# dipakai lagi, ubah manual via ./start.sh config set server-port 25565
+auto_switch_port() {
     local PORT
     PORT=$(get_port)
-    local PID
-    PID=$(lsof -ti :"${PORT}" 2>/dev/null || true)
-    if [ -n "$PID" ]; then
-        echo "[!] Port ${PORT} sudah dipakai. Killing: ${PID}"
-        kill "$PID" 2>/dev/null || true
-        sleep 2
+    PORT=${PORT:-25565}
+    if ! lsof -ti :"${PORT}" >/dev/null 2>&1; then
+        return 0
     fi
+    local NEWPORT
+    NEWPORT=$(find_free_port $((PORT + 1))) || {
+        echo "[ERROR] Tidak ada port bebas setelah ${PORT}. Ubah manual: ./start.sh config set server-port <port>"
+        return 1
+    }
+    if [ -f server.properties ]; then
+        sed -i "s|^server-port=.*|server-port=${NEWPORT}|" server.properties
+    else
+        printf 'server-port=%s\n' "$NEWPORT" > server.properties
+    fi
+    echo "[!] Port ${PORT} sudah dipakai. Server ini pindah ke port ${NEWPORT} (disimpan di server.properties)."
 }
 
 # ═══════════════════════════════════════════
@@ -473,7 +496,7 @@ do_start() {
         exit 1
     fi
 
-    auto_kill_port
+    auto_switch_port
 
     echo "[*] Starting server..."
     echo "    Type:    $SERVER_TYPE"
@@ -526,7 +549,7 @@ do_run() {
         exit 1
     fi
 
-    auto_kill_port
+    auto_switch_port
 
     while true; do
         echo "[*] Menjalankan server langsung di terminal ini..."
