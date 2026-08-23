@@ -6,10 +6,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Instance mode: MC_INSTANCE_DIR overrides working dir (world/properties per instance,
-# jar & plugins tetap dari folder utama)
-RUN_DIR="${MC_INSTANCE_DIR:-$SCRIPT_DIR}"
-cd "$RUN_DIR"
+cd "$SCRIPT_DIR"
 
 # ═══════════════════════════════════════════
 #  Config — override via env vars
@@ -303,7 +300,7 @@ prompt_when_running() {
     echo "Pilihan:"
     echo "  1) Ganti nama session (misal: minecraft1) — server tetap jalan"
     echo "  2) Stop lalu start ulang dengan nama baru"
-    echo "  3) Bikin BARU: instance kedua (misal: minecraft1) — world & port sendiri"
+    echo "  3) Daftar nama BARU (misal: minecraft1) lalu start dengan nama itu"
     echo "  Enter) Batal"
     read -rp "Pilih [1/2/3]: " c
     case "$c" in
@@ -329,69 +326,45 @@ prompt_when_running() {
 }
 
 # ═══════════════════════════════════════════
-#  Instances — beberapa server dari satu folder utama
-#  .instances/<nama>/ : world + server.properties sendiri (port auto-beda)
-#  jar, plugins, libraries : symlink ke folder utama (dipakai bersama)
+#  Server names — daftar nama server disimpan di $INFO_FILE (key: servers)
+#  Format: servers=minecraft,minecraft1,...
+#  Nama dipakai sebagai nama session tmux/screen.
+#  ponytail: semua nama share folder ini (world & port sama), jadi
+#  jalankan satu-satu; pisah folder manual kalau butuh paralel beneran.
 # ═══════════════════════════════════════════
-next_free_port() {
-    local BASE
-    BASE=$(grep -E '^server-port=' "$1/server.properties" 2>/dev/null | cut -d= -f2)
-    BASE=${BASE:-25565}
-    local P=$((BASE + 1))
-    local USED
-    USED=$(grep -hE '^server-port=' "$SCRIPT_DIR"/.instances/*/server.properties 2>/dev/null | cut -d= -f2)
-    while printf '%s\n' "$USED" | grep -qx "$P" || lsof -ti :"${P}" >/dev/null 2>&1; do
-        P=$((P + 1))
-    done
-    echo "$P"
+servers_list() {
+    local L
+    L="$(mcinfo_get servers 2>/dev/null || true)"
+    echo "${L//,/ }"
 }
 
-create_instance() {
+is_session_running() {
+    tmux has-session -t "$1" 2>/dev/null \
+        || screen -list 2>/dev/null | grep -qE "[.]${1}[[:space:]]"
+}
+
+add_server_name() {
     local NAME="$1"
-    local DIR="$SCRIPT_DIR/.instances/$NAME"
-    if [ -f "$DIR/server.properties" ] || [ -d "$DIR/world" ]; then
-        echo "[*] Instance sudah ada: $DIR (lanjut start)"
-        return 0
+    local EXISTING
+    EXISTING="$(mcinfo_get servers 2>/dev/null || true)"
+    case ",${EXISTING}," in
+        *,"${NAME}",*) return 0 ;;
+    esac
+    if [ -n "$EXISTING" ]; then
+        mcinfo_set servers "${EXISTING},${NAME}"
+    else
+        mcinfo_set servers "$NAME"
     fi
-    mkdir -p "$DIR"
-    local PORT_NOTE="(default 25565)"
-    if [ -f "$SCRIPT_DIR/server.properties" ]; then
-        cp "$SCRIPT_DIR/server.properties" "$DIR/"
-        local P
-        P=$(next_free_port "$SCRIPT_DIR")
-        sed -i "s|^server-port=.*|server-port=${P}|" "$DIR/server.properties"
-        PORT_NOTE="$P"
-    fi
-    [ -f "$SCRIPT_DIR/eula.txt" ] && cp "$SCRIPT_DIR/eula.txt" "$DIR/"
-    [ -f "$SCRIPT_DIR/mc-launch.sh" ] && ln -sfn "$SCRIPT_DIR/mc-launch.sh" "$DIR/mc-launch.sh"
-    local f
-    for f in "$SCRIPT_DIR"/*.jar; do
-        [ -e "$f" ] && ln -sfn "$f" "$DIR/$(basename "$f")"
-    done
-    # ponytail: plugins/mods dibagi semua instance; konfigurasi plugin per-instance belum didukung
-    [ -d "$SCRIPT_DIR/plugins" ] && ln -sfn "$SCRIPT_DIR/plugins" "$DIR/plugins"
-    [ -d "$SCRIPT_DIR/mods" ] && ln -sfn "$SCRIPT_DIR/mods" "$DIR/mods"
-    [ -d "$SCRIPT_DIR/libraries" ] && ln -sfn "$SCRIPT_DIR/libraries" "$DIR/libraries"
-    [ -d "$SCRIPT_DIR/versions" ] && ln -sfn "$SCRIPT_DIR/versions" "$DIR/versions"
-    echo "[OK] Instance dibuat : $DIR"
-    echo "     Port             : $PORT_NOTE"
-    echo "     World            : baru (dibuat saat start pertama)"
-    echo "     Jar/Plugins      : dipakai dari folder utama"
 }
 
-list_instances() {
-    local d n st port
-    for d in "$SCRIPT_DIR"/.instances/*/; do
-        [ -d "$d" ] || continue
-        n=$(basename "$d")
-        if tmux has-session -t "$n" 2>/dev/null \
-           || screen -list 2>/dev/null | grep -qE "[.]${n}[[:space:]]"; then
-            st="RUNNING"
+list_servers() {
+    local S
+    for S in $(servers_list); do
+        if is_session_running "$S"; then
+            echo "  $S  [RUNNING]"
         else
-            st="sisa (tidak jalan)"
+            echo "  $S  [stop]"
         fi
-        port=$(grep -E '^server-port=' "$d/server.properties" 2>/dev/null | cut -d= -f2)
-        echo "  $n  [$st]  port=${port:-?}  -> $d"
     done
 }
 
@@ -401,26 +374,38 @@ start_new_instance() {
         echo "[ERROR] Nama tidak valid: ${NAME:-<kosong>} (hanya huruf/angka/.-_ )"
         return 1
     fi
-    create_instance "$NAME" || return 1
-    echo "[*] Menjalankan instance: $NAME"
-    MC_INSTANCE_DIR="$SCRIPT_DIR/.instances/$NAME" SESSION_NAME="$NAME" \
-        bash "$SCRIPT_DIR/start.sh" start
+    if is_session_running "$NAME"; then
+        echo "[ERROR] Session '$NAME' sedang jalan."
+        return 1
+    fi
+    add_server_name "$NAME"
+    echo "[OK] Terdaftar di $INFO_FILE -> servers=$(mcinfo_get servers 2>/dev/null || true)"
+    echo "[*] Menjalankan server sebagai: $NAME"
+    SESSION_NAME="$NAME" bash "$SCRIPT_DIR/start.sh" start
 }
 
 # Nama default utk instance baru: minecraft -> minecraft1 -> minecraft2 ...
-# ponytail: cek hanya tmux + folder instance; user screen/nohup bisa dapat saranan nama terpakai
+# ponytail: cek session jalan + daftar nama di $INFO_FILE
 next_instance_name() {
     local BASE="minecraft"
     local N="$BASE"
     local i=1
     while :; do
-        if [ -e "$SCRIPT_DIR/.instances/$N" ]; then
-            echo "  (skip $N: folder .instances/$N sudah ada)" >&2
-        elif [ -n "$N" ] && tmux has-session -t "$N" 2>/dev/null; then
-            echo "  (skip $N: tmux session '$N' sedang jalan)" >&2
+        local TAKEN=""
+        if is_session_running "$N"; then
+            echo "  (skip $N: session sedang jalan)" >&2
+            TAKEN=1
         else
-            break
+            local S
+            for S in $(servers_list); do
+                if [ "$S" = "$N" ]; then
+                    echo "  (skip $N: sudah terdaftar di $INFO_FILE)" >&2
+                    TAKEN=1
+                    break
+                fi
+            done
         fi
+        [ -z "$TAKEN" ] && break
         N="$BASE$((i++))"
     done
     echo "$N"
@@ -429,7 +414,7 @@ next_instance_name() {
 prompt_new_instance() {
     local DEF n
     DEF="$(next_instance_name)"
-    read -rp "Nama instance baru ($DEF) [Enter: pakai nama ini]: " n
+    read -rp "Nama server baru ($DEF) [Enter: pakai nama ini]: " n
     [ -z "$n" ] && n="$DEF"
     start_new_instance "$n" || true
 }
@@ -456,10 +441,10 @@ is_launcher_script() {
 build_launch_command() {
     if is_launcher_script; then
         printf 'cd %q && MC_JAVA_FLAGS=%q MC_JAVA_XMS=%q MC_JAVA_XMX=%q MC_JAVA_BIN=%q bash %q nogui' \
-            "$RUN_DIR" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAVA_BIN" "$JAR"
+            "$SCRIPT_DIR" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAVA_BIN" "$JAR"
     else
         printf 'cd %q && %q %s -Xms%q -Xmx%q -jar %q nogui' \
-            "$RUN_DIR" "$JAVA_BIN" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAR"
+            "$SCRIPT_DIR" "$JAVA_BIN" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAR"
     fi
 }
 
@@ -1032,7 +1017,7 @@ show_menu() {
         echo "13) Change Java version"
         echo "14) View/Edit .mc-info"
         echo "15) Ganti nama session"
-        echo "16) Bikin instance baru (misal: minecraft1)"
+        echo "16) Daftar nama server baru (misal: minecraft1)"
         echo "17) Exit"
         echo ""
         read -p "Pilih opsi [1-17]: " choice
@@ -1193,12 +1178,10 @@ else
         new)
             shift
             if [ -z "${1:-}" ]; then
-                if [ -d "$SCRIPT_DIR/.instances" ]; then
-                    echo "Instance yang ada:"
-                    list_instances
-                    echo "  Hapus sisa: rm -rf \"$SCRIPT_DIR/.instances/<nama>\""
-                fi
-                echo "Usage: $0 new <nama-instance>"
+                echo "Server terdaftar di $INFO_FILE:"
+                list_servers
+                [ -d "$SCRIPT_DIR/.instances" ] && echo "  (folder .instances/ versi lama tidak dipakai lagi, boleh dihapus)"
+                echo "Usage: $0 new <nama-server>"
                 exit 1
             fi
             start_new_instance "$1"
