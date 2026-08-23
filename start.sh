@@ -1,12 +1,15 @@
 #!/bin/bash
 # start.sh — Universal MC server launcher
-# Usage: ./start.sh {start|run|stop|restart|status|console|config|stats|world|send|rename|plugins|mcinfo|menu}
+# Usage: ./start.sh {start|run|stop|restart|status|console|config|stats|world|send|rename|new|plugins|mcinfo|menu}
 # Auto-detects: tmux > screen > nohup fallback
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+# Instance mode: MC_INSTANCE_DIR overrides working dir (world/properties per instance,
+# jar & plugins tetap dari folder utama)
+RUN_DIR="${MC_INSTANCE_DIR:-$SCRIPT_DIR}"
+cd "$RUN_DIR"
 
 # ═══════════════════════════════════════════
 #  Config — override via env vars
@@ -255,13 +258,17 @@ is_running() {
 # ═══════════════════════════════════════════
 #  Session name management
 # ═══════════════════════════════════════════
+is_valid_name() {
+    printf '%s' "$1" | grep -qE '^[A-Za-z0-9._-]+$'
+}
+
 set_session_name() {
     local NEW="$1"
     if [ -z "$NEW" ]; then
         echo "Usage: $0 rename <nama-baru>"
         return 1
     fi
-    if ! printf '%s' "$NEW" | grep -qE '^[A-Za-z0-9._-]+$'; then
+    if ! is_valid_name "$NEW"; then
         echo "[ERROR] Nama tidak valid: $NEW (hanya huruf/angka/.-_ )"
         return 1
     fi
@@ -296,8 +303,9 @@ prompt_when_running() {
     echo "Pilihan:"
     echo "  1) Ganti nama session (misal: minecraft1) — server tetap jalan"
     echo "  2) Stop lalu start ulang dengan nama baru"
+    echo "  3) Bikin BARU: instance kedua (misal: minecraft1) — world & port sendiri"
     echo "  Enter) Batal"
-    read -rp "Pilih [1/2]: " c
+    read -rp "Pilih [1/2/3]: " c
     case "$c" in
         1)
             read -rp "Nama session baru: " n
@@ -314,7 +322,76 @@ prompt_when_running() {
                 do_start
             fi
             ;;
+        3)
+            read -rp "Nama instance baru: " n
+            if [ -n "$n" ]; then
+                start_new_instance "$n" || true
+            fi
+            ;;
     esac
+}
+
+# ═══════════════════════════════════════════
+#  Instances — beberapa server dari satu folder utama
+#  .instances/<nama>/ : world + server.properties sendiri (port auto-beda)
+#  jar, plugins, libraries : symlink ke folder utama (dipakai bersama)
+# ═══════════════════════════════════════════
+next_free_port() {
+    local BASE
+    BASE=$(grep -E '^server-port=' "$1/server.properties" 2>/dev/null | cut -d= -f2)
+    BASE=${BASE:-25565}
+    local P=$((BASE + 1))
+    local USED
+    USED=$(grep -hE '^server-port=' "$SCRIPT_DIR"/.instances/*/server.properties 2>/dev/null | cut -d= -f2)
+    while printf '%s\n' "$USED" | grep -qx "$P" || lsof -ti :"${P}" >/dev/null 2>&1; do
+        P=$((P + 1))
+    done
+    echo "$P"
+}
+
+create_instance() {
+    local NAME="$1"
+    local DIR="$SCRIPT_DIR/.instances/$NAME"
+    if [ -f "$DIR/server.properties" ] || [ -d "$DIR/world" ]; then
+        echo "[*] Instance sudah ada: $DIR (lanjut start)"
+        return 0
+    fi
+    mkdir -p "$DIR"
+    local PORT_NOTE="(default 25565)"
+    if [ -f "$SCRIPT_DIR/server.properties" ]; then
+        cp "$SCRIPT_DIR/server.properties" "$DIR/"
+        local P
+        P=$(next_free_port "$SCRIPT_DIR")
+        sed -i "s|^server-port=.*|server-port=${P}|" "$DIR/server.properties"
+        PORT_NOTE="$P"
+    fi
+    [ -f "$SCRIPT_DIR/eula.txt" ] && cp "$SCRIPT_DIR/eula.txt" "$DIR/"
+    [ -f "$SCRIPT_DIR/mc-launch.sh" ] && ln -sfn "$SCRIPT_DIR/mc-launch.sh" "$DIR/mc-launch.sh"
+    local f
+    for f in "$SCRIPT_DIR"/*.jar; do
+        [ -e "$f" ] && ln -sfn "$f" "$DIR/$(basename "$f")"
+    done
+    # ponytail: plugins/mods dibagi semua instance; konfigurasi plugin per-instance belum didukung
+    [ -d "$SCRIPT_DIR/plugins" ] && ln -sfn "$SCRIPT_DIR/plugins" "$DIR/plugins"
+    [ -d "$SCRIPT_DIR/mods" ] && ln -sfn "$SCRIPT_DIR/mods" "$DIR/mods"
+    [ -d "$SCRIPT_DIR/libraries" ] && ln -sfn "$SCRIPT_DIR/libraries" "$DIR/libraries"
+    [ -d "$SCRIPT_DIR/versions" ] && ln -sfn "$SCRIPT_DIR/versions" "$DIR/versions"
+    echo "[OK] Instance dibuat : $DIR"
+    echo "     Port             : $PORT_NOTE"
+    echo "     World            : baru (dibuat saat start pertama)"
+    echo "     Jar/Plugins      : dipakai dari folder utama"
+}
+
+start_new_instance() {
+    local NAME="$1"
+    if ! is_valid_name "$NAME"; then
+        echo "[ERROR] Nama tidak valid: ${NAME:-<kosong>} (hanya huruf/angka/.-_ )"
+        return 1
+    fi
+    create_instance "$NAME" || return 1
+    echo "[*] Menjalankan instance: $NAME"
+    MC_INSTANCE_DIR="$SCRIPT_DIR/.instances/$NAME" SESSION_NAME="$NAME" \
+        bash "$SCRIPT_DIR/start.sh" start
 }
 
 # ═══════════════════════════════════════════
@@ -339,10 +416,10 @@ is_launcher_script() {
 build_launch_command() {
     if is_launcher_script; then
         printf 'cd %q && MC_JAVA_FLAGS=%q MC_JAVA_XMS=%q MC_JAVA_XMX=%q MC_JAVA_BIN=%q bash %q nogui' \
-            "$SCRIPT_DIR" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAVA_BIN" "$JAR"
+            "$RUN_DIR" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAVA_BIN" "$JAR"
     else
         printf 'cd %q && %q %s -Xms%q -Xmx%q -jar %q nogui' \
-            "$SCRIPT_DIR" "$JAVA_BIN" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAR"
+            "$RUN_DIR" "$JAVA_BIN" "$JAVA_FLAGS" "$JAVA_XMS" "$JAVA_XMX" "$JAR"
     fi
 }
 
@@ -848,6 +925,7 @@ print_usage() {
     echo "  console            Attach to console"
     echo "  send <cmd>         Send command to server"
     echo "  rename <nama>      Ganti nama session (misal: minecraft1)"
+    echo "  new <nama>         Bikin instance baru (world & port sendiri)"
     echo ""
     echo "Config:"
     echo "  config             Show all properties"
@@ -914,9 +992,10 @@ show_menu() {
         echo "13) Change Java version"
         echo "14) View/Edit .mc-info"
         echo "15) Ganti nama session"
-        echo "16) Exit"
+        echo "16) Bikin instance baru (misal: minecraft1)"
+        echo "17) Exit"
         echo ""
-        read -p "Pilih opsi [1-16]: " choice
+        read -p "Pilih opsi [1-17]: " choice
         case "$choice" in
             1) do_start ;;
             2) do_stop ;;
@@ -1040,6 +1119,13 @@ show_menu() {
                 read -p "Tekan Enter untuk lanjut..."
                 ;;
             16)
+                read -rp "Nama instance baru: " nn
+                if [ -n "$nn" ]; then
+                    start_new_instance "$nn" || true
+                fi
+                read -p "Tekan Enter untuk lanjut..."
+                ;;
+            17)
                 echo "Keluar..."
                 break
                 ;;
@@ -1067,6 +1153,18 @@ else
         world)          do_world "$@" ;;
         send|cmd)       do_send "$@" ;;
         rename)         shift; set_session_name "${1:-}" ;;
+        new)
+            shift
+            if [ -z "${1:-}" ]; then
+                if [ -d "$SCRIPT_DIR/.instances" ]; then
+                    echo "Instance yang ada:"
+                    ls -1 "$SCRIPT_DIR/.instances" 2>/dev/null || true
+                fi
+                echo "Usage: $0 new <nama-instance>"
+                exit 1
+            fi
+            start_new_instance "$1"
+            ;;
         plugins|plugin) shift; do_plugins "$@" ;;
         mcinfo)         do_mcinfo ;;
         menu)           show_menu ;;

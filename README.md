@@ -104,6 +104,9 @@ cd survival  # server directory
 ./start.sh status             # Status
 ./start.sh console            # Attach console
 ./start.sh send "say Hello"   # Send command to server
+./start.sh rename minecraft1  # Rename tmux/screen session (tersimpan di .mc-info)
+./start.sh new minecraft1     # Instance BARU: world & port sendiri (.instances/minecraft1/)
+./start.sh new                # List instance yang ada
 
 # Config
 ./start.sh config                    # Show all properties
