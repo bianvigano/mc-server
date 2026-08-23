@@ -1,6 +1,6 @@
 #!/bin/bash
 # start.sh — Universal MC server launcher
-# Usage: ./start.sh {start|run|stop|restart|status|console|config|stats|world|send|plugins|mcinfo|menu}
+# Usage: ./start.sh {start|run|stop|restart|status|console|config|stats|world|send|rename|plugins|mcinfo|menu}
 # Auto-detects: tmux > screen > nohup fallback
 
 set -e
@@ -13,7 +13,6 @@ cd "$SCRIPT_DIR"
 # ═══════════════════════════════════════════
 INFO_FILE=".mc-info"
 DEFAULT_JAVA_FLAGS="-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200"
-SESSION_NAME="${SESSION_NAME:-minecraft}"
 PID_FILE=".server.pid"
 
 # Resolve Java binary path by version
@@ -91,6 +90,10 @@ JAVA_XMX="${JAVA_XMX:-${MCINFO_XMX:-2G}}"
 AUTO_RESTART="${AUTO_RESTART:-${MCINFO_AUTO_RESTART:-false}}"
 JAVA_VERSION="${JAVA_VERSION:-${MCINFO_JAVA_VERSION:-}}"
 JAVA_BIN="$(resolve_java_bin "$JAVA_VERSION")"
+
+# Session name priority: env > .mc-info > default
+SESSION_NAME="${SESSION_NAME:-$(mcinfo_get session_name 2>/dev/null || true)}"
+SESSION_NAME="${SESSION_NAME:-minecraft}"
 
 # Set default Java flags based on server type
 set_java_flags_by_type() {
@@ -250,6 +253,71 @@ is_running() {
 }
 
 # ═══════════════════════════════════════════
+#  Session name management
+# ═══════════════════════════════════════════
+set_session_name() {
+    local NEW="$1"
+    if [ -z "$NEW" ]; then
+        echo "Usage: $0 rename <nama-baru>"
+        return 1
+    fi
+    if ! printf '%s' "$NEW" | grep -qE '^[A-Za-z0-9._-]+$'; then
+        echo "[ERROR] Nama tidak valid: $NEW (hanya huruf/angka/.-_ )"
+        return 1
+    fi
+    if [ "$NEW" = "$SESSION_NAME" ]; then
+        echo "[*] Nama sudah: $SESSION_NAME"
+        return 0
+    fi
+    if is_running; then
+        case "$BACKEND" in
+            tmux)
+                if tmux rename-session -t "$SESSION_NAME" "$NEW" 2>/dev/null; then
+                    echo "[OK] tmux session renamed: $SESSION_NAME -> $NEW"
+                else
+                    echo "[ERROR] Gagal rename tmux session."
+                    return 1
+                fi
+                ;;
+            *)
+                # ponytail: rename live hanya tmux; screen/nohup berlaku setelah stop+start
+                echo "[WARN] Backend $BACKEND: rename berlaku setelah stop + start."
+                ;;
+        esac
+    fi
+    SESSION_NAME="$NEW"
+    mcinfo_set session_name "$NEW"
+    echo "[OK] Tersimpan ke $INFO_FILE: session_name=$NEW"
+}
+
+prompt_when_running() {
+    [ -t 0 ] || return 0
+    echo ""
+    echo "Pilihan:"
+    echo "  1) Ganti nama session (misal: minecraft1) — server tetap jalan"
+    echo "  2) Stop lalu start ulang dengan nama baru"
+    echo "  Enter) Batal"
+    read -rp "Pilih [1/2]: " c
+    case "$c" in
+        1)
+            read -rp "Nama session baru: " n
+            if [ -n "$n" ]; then
+                set_session_name "$n" || true
+            fi
+            ;;
+        2)
+            read -rp "Nama session baru: " n
+            if [ -n "$n" ]; then
+                do_stop
+                sleep 2
+                set_session_name "$n" || true
+                do_start
+            fi
+            ;;
+    esac
+}
+
+# ═══════════════════════════════════════════
 #  Send command to server console
 # ═══════════════════════════════════════════
 send_cmd() {
@@ -293,6 +361,7 @@ launch_foreground() {
 do_start() {
     if is_running; then
         echo "[*] Server sudah jalan ($BACKEND: $SESSION_NAME)"
+        prompt_when_running
         return
     fi
 
@@ -345,7 +414,7 @@ do_start() {
 do_run() {
     if is_running; then
         echo "[*] Server sudah jalan ($BACKEND: $SESSION_NAME)"
-        echo "    Stop dulu dengan: $0 stop"
+        prompt_when_running
         return
     fi
 
@@ -778,6 +847,7 @@ print_usage() {
     echo "  status             Server status"
     echo "  console            Attach to console"
     echo "  send <cmd>         Send command to server"
+    echo "  rename <nama>      Ganti nama session (misal: minecraft1)"
     echo ""
     echo "Config:"
     echo "  config             Show all properties"
@@ -810,7 +880,7 @@ print_usage() {
     echo "  JAVA_FLAGS        JVM flags             (default: G1GC tuning)"
     echo "  AUTO_RESTART      true|false            (default: false)"
     echo "  SERVER_JAR        Jar filename          (auto-detected)"
-    echo "  SESSION_NAME      Screen/tmux name      (default: minecraft)"
+    echo "  SESSION_NAME      Screen/tmux name      (default: minecraft, tersimpan di .mc-info)"
     echo "  FORCE_BACKEND     tmux|screen|nohup     (auto-detected)"
     echo "  WORLD_BACKUP_DIR  World backup location (default: ./world-backups)"
 }
@@ -824,7 +894,7 @@ show_menu() {
         echo "=== Minecraft Server Manager ==="
         echo "Server: $SERVER_TYPE"
         echo "Jar:    $JAR"
-        echo "Backend: $BACKEND"
+        echo "Backend: $BACKEND (session: $SESSION_NAME)"
         echo "RAM:    $JAVA_XMS - $JAVA_XMX"
         echo "Java:   ${JAVA_VERSION:-system} ($JAVA_BIN)"
         echo "Java Flags: $JAVA_FLAGS"
@@ -843,9 +913,10 @@ show_menu() {
         echo "12) Change Java memory (XMS/XMX)"
         echo "13) Change Java version"
         echo "14) View/Edit .mc-info"
-        echo "15) Exit"
+        echo "15) Ganti nama session"
+        echo "16) Exit"
         echo ""
-        read -p "Pilih opsi [1-15]: " choice
+        read -p "Pilih opsi [1-16]: " choice
         case "$choice" in
             1) do_start ;;
             2) do_stop ;;
@@ -962,6 +1033,13 @@ show_menu() {
                 ;;
             14) do_mcinfo ;;
             15)
+                read -rp "Nama session baru: " nn
+                if [ -n "$nn" ]; then
+                    set_session_name "$nn" || true
+                fi
+                read -p "Tekan Enter untuk lanjut..."
+                ;;
+            16)
                 echo "Keluar..."
                 break
                 ;;
@@ -988,6 +1066,7 @@ else
         stats|monitor)  do_stats ;;
         world)          do_world "$@" ;;
         send|cmd)       do_send "$@" ;;
+        rename)         shift; set_session_name "${1:-}" ;;
         plugins|plugin) shift; do_plugins "$@" ;;
         mcinfo)         do_mcinfo ;;
         menu)           show_menu ;;
