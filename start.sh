@@ -323,10 +323,7 @@ prompt_when_running() {
             fi
             ;;
         3)
-            read -rp "Nama instance baru: " n
-            if [ -n "$n" ]; then
-                start_new_instance "$n" || true
-            fi
+            prompt_new_instance
             ;;
     esac
 }
@@ -392,6 +389,24 @@ start_new_instance() {
     echo "[*] Menjalankan instance: $NAME"
     MC_INSTANCE_DIR="$SCRIPT_DIR/.instances/$NAME" SESSION_NAME="$NAME" \
         bash "$SCRIPT_DIR/start.sh" start
+}
+
+# Nama default utk instance baru: minecraft -> minecraft1 -> minecraft2 ...
+# ponytail: cek hanya tmux + folder instance; user screen/nohup bisa dapat saranan nama terpakai
+next_instance_name() {
+    local BASE="minecraft" N="$BASE" i=1
+    while [ -e "$SCRIPT_DIR/.instances/$N" ] || tmux has-session -t "$N" 2>/dev/null; do
+        N="$BASE$((i++))"
+    done
+    echo "$N"
+}
+
+prompt_new_instance() {
+    local DEF n
+    DEF="$(next_instance_name)"
+    read -rp "Nama instance baru ($DEF) [Enter: pakai nama ini]: " n
+    [ -z "$n" ] && n="$DEF"
+    start_new_instance "$n" || true
 }
 
 # ═══════════════════════════════════════════
@@ -1119,10 +1134,7 @@ show_menu() {
                 read -p "Tekan Enter untuk lanjut..."
                 ;;
             16)
-                read -rp "Nama instance baru: " nn
-                if [ -n "$nn" ]; then
-                    start_new_instance "$nn" || true
-                fi
+                prompt_new_instance
                 read -p "Tekan Enter untuk lanjut..."
                 ;;
             17)
