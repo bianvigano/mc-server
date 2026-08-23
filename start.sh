@@ -379,6 +379,22 @@ create_instance() {
     echo "     Jar/Plugins      : dipakai dari folder utama"
 }
 
+list_instances() {
+    local d n st port
+    for d in "$SCRIPT_DIR"/.instances/*/; do
+        [ -d "$d" ] || continue
+        n=$(basename "$d")
+        if tmux has-session -t "$n" 2>/dev/null \
+           || screen -list 2>/dev/null | grep -qE "[.]${n}[[:space:]]"; then
+            st="RUNNING"
+        else
+            st="sisa (tidak jalan)"
+        fi
+        port=$(grep -E '^server-port=' "$d/server.properties" 2>/dev/null | cut -d= -f2)
+        echo "  $n  [$st]  port=${port:-?}  -> $d"
+    done
+}
+
 start_new_instance() {
     local NAME="$1"
     if ! is_valid_name "$NAME"; then
@@ -394,8 +410,17 @@ start_new_instance() {
 # Nama default utk instance baru: minecraft -> minecraft1 -> minecraft2 ...
 # ponytail: cek hanya tmux + folder instance; user screen/nohup bisa dapat saranan nama terpakai
 next_instance_name() {
-    local BASE="minecraft" N="$BASE" i=1
-    while [ -e "$SCRIPT_DIR/.instances/$N" ] || tmux has-session -t "$N" 2>/dev/null; do
+    local BASE="minecraft"
+    local N="$BASE"
+    local i=1
+    while :; do
+        if [ -e "$SCRIPT_DIR/.instances/$N" ]; then
+            echo "  (skip $N: folder .instances/$N sudah ada)" >&2
+        elif [ -n "$N" ] && tmux has-session -t "$N" 2>/dev/null; then
+            echo "  (skip $N: tmux session '$N' sedang jalan)" >&2
+        else
+            break
+        fi
         N="$BASE$((i++))"
     done
     echo "$N"
@@ -1170,7 +1195,8 @@ else
             if [ -z "${1:-}" ]; then
                 if [ -d "$SCRIPT_DIR/.instances" ]; then
                     echo "Instance yang ada:"
-                    ls -1 "$SCRIPT_DIR/.instances" 2>/dev/null || true
+                    list_instances
+                    echo "  Hapus sisa: rm -rf \"$SCRIPT_DIR/.instances/<nama>\""
                 fi
                 echo "Usage: $0 new <nama-instance>"
                 exit 1
