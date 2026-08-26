@@ -98,7 +98,7 @@ SESSION_NAME="${SESSION_NAME:-minecraft}"
 # Set default Java flags based on server type
 set_java_flags_by_type() {
     case "$SERVER_TYPE" in
-        paper|purpur)
+        paper|folia|purpur)
             JAVA_FLAGS="$DEFAULT_JAVA_FLAGS"
             ;;
         fabric|quilt)

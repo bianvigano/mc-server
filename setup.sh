@@ -1,8 +1,9 @@
 #!/bin/bash
 # mc-server setup — All-in-one Minecraft server setup
-# Supports: fabric, forge, neoforge, paper, purpur, quilt
+# Supports: fabric, folia, forge, neoforge, paper, purpur, quilt
 # Usage: ./setup.sh --type paper --version 1.21.4
 #        ./setup.sh --type fabric
+#        ./setup.sh --type folia --version 1.21.4
 #        ./setup.sh --type purpur --version 1.21.4
 #        ./setup.sh (interactive)
 
@@ -35,7 +36,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --type TYPE       Server type: bukkit, spigot, paper, purpur, fabric, forge, neoforge, quilt (required)"
+            echo "  --type TYPE       Server type: bukkit, spigot, paper, folia, purpur, fabric, forge, neoforge, quilt (required)"
             echo "  --version VER     Minecraft version (default: latest)"
             echo "  --dir DIR         Install directory (default: ./<type>-server)"
             echo "  --build NUM       Paper: specific build number"
@@ -45,6 +46,7 @@ while [[ $# -gt 0 ]]; do
             echo "Examples:"
             echo "  $0 --type paper"
             echo "  $0 --type paper --version 1.21.4"
+            echo "  $0 --type folia --version 1.21.4"
             echo "  $0 --type fabric --version 1.21.4"
             echo "  $0 --type purpur --version 1.21.4"
             echo "  $0 --type forge --version 1.21.4"
@@ -68,22 +70,24 @@ if [ -z "$SERVER_TYPE" ]; then
     echo "  1) Bukkit   — Original plugin API (legacy)"
     echo "  2) Spigot   — Optimized Bukkit (legacy)"
     echo "  3) Paper    — Performance + Bukkit/Spigot plugin support"
-    echo "  4) Purpur   — Paper + extra configurability"
-    echo "  5) Fabric   — Mod loader (mods, not plugins)"
-    echo "  6) Forge    — Classic mod loader"
-    echo "  7) NeoForge — Modern Forge fork for modded servers"
-    echo "  8) Quilt    — Lightweight mod loader"
+    echo "  4) Folia    — Paper fork with regionized multithreading"
+    echo "  5) Purpur   — Paper + extra configurability"
+    echo "  6) Fabric   — Mod loader (mods, not plugins)"
+    echo "  7) Forge    — Classic mod loader"
+    echo "  8) NeoForge — Modern Forge fork for modded servers"
+    echo "  9) Quilt    — Lightweight mod loader"
     echo ""
-    read -rp "Pilih [1/2/3/4/5/6/7/8]: " choice
+    read -rp "Pilih [1/2/3/4/5/6/7/8/9]: " choice
     case "$choice" in
         1) SERVER_TYPE="bukkit" ;;
         2) SERVER_TYPE="spigot" ;;
         3) SERVER_TYPE="paper" ;;
-        4) SERVER_TYPE="purpur" ;;
-        5) SERVER_TYPE="fabric" ;;
-        6) SERVER_TYPE="forge" ;;
-        7) SERVER_TYPE="neoforge" ;;
-        8) SERVER_TYPE="quilt" ;;
+        4) SERVER_TYPE="folia" ;;
+        5) SERVER_TYPE="purpur" ;;
+        6) SERVER_TYPE="fabric" ;;
+        7) SERVER_TYPE="forge" ;;
+        8) SERVER_TYPE="neoforge" ;;
+        9) SERVER_TYPE="quilt" ;;
         *) echo "Invalid choice"; exit 1 ;;
     esac
 
@@ -99,9 +103,11 @@ if [ -z "$SERVER_TYPE" ]; then
         echo "[*] Fetching available versions for ${SERVER_TYPE^^}..."
 
         case "$SERVER_TYPE" in
-            paper|purpur)
+            paper|purpur|folia)
                 if [ "$SERVER_TYPE" = "paper" ]; then
                     API_URL="https://fill.papermc.io/v3/projects/paper"
+                elif [ "$SERVER_TYPE" = "folia" ]; then
+                    API_URL="https://fill.papermc.io/v3/projects/folia"
                 else
                     API_URL="https://api.purpurmc.org/v2/purpur"
                 fi
@@ -293,8 +299,8 @@ fi
 
 # Validate type
 case "$SERVER_TYPE" in
-    bukkit|spigot|paper|purpur|fabric|forge|neoforge|quilt) ;;
-    *) echo "Error: --type must be bukkit|spigot|paper|purpur|fabric|forge|neoforge|quilt"; exit 1 ;;
+    bukkit|spigot|paper|folia|purpur|fabric|forge|neoforge|quilt) ;;
+    *) echo "Error: --type must be bukkit|spigot|paper|folia|purpur|fabric|forge|neoforge|quilt"; exit 1 ;;
 esac
 
 INSTALL_DIR="${INSTALL_DIR:-./${SERVER_TYPE}-server}"
@@ -508,6 +514,65 @@ print(f'{build_num}|{url}')
     mkdir -p "$INSTALL_DIR"
     curl --progress-bar -# -H "User-Agent: $USER_AGENT" -o "$INSTALL_DIR/paper.jar" "$JAR_URL"
     echo "  Saved: $INSTALL_DIR/paper.jar"
+}
+
+# ═══════════════════════════════════════════════
+#  Download: Folia
+# ═══════════════════════════════════════════════
+download_folia() {
+    local API="https://fill.papermc.io/v3/projects/folia"
+
+    if [ -z "$MC_VERSION" ]; then
+        echo "[1/4] Resolving latest Folia version..."
+        MC_VERSION=$(curl -s -H "User-Agent: $USER_AGENT" "$API" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+versions = data.get('versions', {})
+keys = list(versions.keys())
+print(keys[0])
+" 2>/dev/null)
+        if [ -z "$MC_VERSION" ]; then
+            echo "Error: Failed to resolve latest Folia version"
+            exit 1
+        fi
+    fi
+    echo "  Version: $MC_VERSION"
+
+    echo "[2/4] Fetching Folia builds for $MC_VERSION..."
+    local BUILDS_JSON
+    BUILDS_JSON=$(curl -s -H "User-Agent: $USER_AGENT" "$API/versions/$MC_VERSION/builds")
+
+    local BUILD_URL
+    BUILD_URL=$(echo "$BUILDS_JSON" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+builds = data.get('builds', data) if isinstance(data, dict) else data
+if isinstance(builds, dict):
+    builds = builds.get('builds', [])
+stable = [b for b in builds if str(b.get('channel', '')).upper() == 'STABLE']
+if not stable:
+    stable = builds
+latest = stable[-1] if isinstance(stable, list) and stable else builds[-1]
+build_num = latest.get('build', '?')
+downloads = latest.get('downloads', {})
+url = downloads.get('server:default', {}).get('url', '')
+print(f'{build_num}|{url}')
+" 2>/dev/null)
+
+    local BUILD_NUM=$(echo "$BUILD_URL" | cut -d'|' -f1)
+    local JAR_URL=$(echo "$BUILD_URL" | cut -d'|' -f2)
+
+    if [ -z "$JAR_URL" ] || [ "$JAR_URL" = "" ]; then
+        echo "Error: Failed to get Folia download URL"
+        exit 1
+    fi
+
+    echo "  Build: $BUILD_NUM"
+    echo "[3/4] Downloading Folia $MC_VERSION build $BUILD_NUM..."
+
+    mkdir -p "$INSTALL_DIR"
+    curl --progress-bar -# -H "User-Agent: $USER_AGENT" -o "$INSTALL_DIR/folia.jar" "$JAR_URL"
+    echo "  Saved: $INSTALL_DIR/folia.jar"
 }
 
 # ═══════════════════════════════════════════════
@@ -851,6 +916,10 @@ case "$SERVER_TYPE" in
     paper)
         download_paper
         SERVER_JAR="paper.jar"
+        ;;
+    folia)
+        download_folia
+        SERVER_JAR="folia.jar"
         ;;
     purpur)
         download_purpur

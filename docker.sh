@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --type TYPE     Server type (paper/purpur/fabric) (default: paper)"
+            echo "  --type TYPE     Server type (paper/folia/purpur/fabric) (default: paper)"
             echo "  --version VER   MC version (default: latest)"
             echo "  --port PORT     Server port (default: 25565)"
             echo "  --ram RAM       Max RAM (default: 2G)"
@@ -67,6 +67,7 @@ echo ""
 # ═══════════════════════════════════════════
 case "$SERVER_TYPE" in
     paper)   TYPE_VAR="PAPER" ;;
+    folia)   TYPE_VAR="FOLIA" ;;
     purpur)  TYPE_VAR="PURPUR" ;;
     fabric)  TYPE_VAR="FABRIC" ;;
     spigot)  TYPE_VAR="SPIGOT" ;;

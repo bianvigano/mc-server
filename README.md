@@ -47,6 +47,7 @@ Or with flags:
 ```bash
 ./setup.sh --type paper
 ./setup.sh --type purpur --version 1.21.4
+./setup.sh --type folia --version 1.21.4
 ./setup.sh --type fabric --version 1.21.4
 ./setup.sh --type bukkit --version 1.21.4
 ./setup.sh --type spigot --version 1.21.4
@@ -65,10 +66,11 @@ Pilih server type:
   1) Bukkit   — Original plugin API (legacy)
   2) Spigot   — Optimized Bukkit (legacy)
   3) Paper    — Performance + Bukkit/Spigot plugin support
-  4) Purpur   — Paper + extra configurability
-  5) Fabric   — Mod loader (mods, not plugins)
+  4) Folia    — Paper fork with regionized multithreading
+  5) Purpur   — Paper + extra configurability
+  6) Fabric   — Mod loader (mods, not plugins)
 
-Pilih [1/2/3/4/5]: 4
+Pilih [1/2/3/4/5/6]: 4
 
 Nama directory [./purpur-server]: survival
 
@@ -122,7 +124,7 @@ cd survival  # server directory
 ./start.sh world list             # List backups
 ./start.sh world restore <file>   # Restore
 
-# Plugins (Paper/Purpur only)
+# Plugins (Paper/Folia/Purpur only)
 ./start.sh plugins search essentials
 ./start.sh plugins install essentialsx
 ./start.sh plugins list
@@ -151,7 +153,7 @@ AUTO_RESTART=true ./start.sh run
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--type` | *(interactive)* | Server type: `bukkit`, `spigot`, `paper`, `purpur`, `fabric` |
+| `--type` | *(interactive)* | Server type: `bukkit`, `spigot`, `paper`, `folia`, `purpur`, `fabric` |
 | `--version` | latest | Minecraft version |
 | `--dir` | `./<type>-server` | Output directory |
 | `--build` | latest stable | Paper: specific build number |
@@ -174,6 +176,11 @@ AUTO_RESTART=true ./start.sh run
 - Fork of Paper with extra configurability
 - Compatible with Bukkit/Spigot/Paper plugins
 - API: `api.purpurmc.org/v2`
+
+### Folia
+- Fork of Paper with regionized multithreading
+- Compatible with Paper plugins (thread-safe plugins only)
+- API: `fill.papermc.io/v3`
 
 ### Fabric
 - Mod loader (mods, not plugins)
@@ -202,7 +209,7 @@ After setup:
 ├── update.sh        # Server updater
 ├── plugins/         # Plugins directory
 ├── world/           # World data
-├── server.jar       # Paper/Purpur/Fabric jar
+├── server.jar       # Paper/Folia/Purpur/Fabric jar
 ├── .mc-info         # Server metadata + launcher config
 ├── eula.txt         # Auto-accepted
 └── server.properties
@@ -297,7 +304,7 @@ Updates the server jar only. World, config, and plugins are untouched.
 
 ## How It Works
 
-**Paper/Purpur:**
+**Paper/Folia/Purpur:**
 1. Queries official API for version list + current stable
 2. Downloads server jar directly with progress bar
 3. Accepts EULA

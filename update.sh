@@ -2,7 +2,7 @@
 # update.sh — Update MC server jar without touching world/config/plugins
 # Usage: ./update.sh [--version 1.21.4]
 #
-# Supports: paper, purpur, fabric, forge, neoforge, quilt
+# Supports: paper, folia, purpur, fabric, forge, neoforge, quilt
 # Auto-detects type from .mc-info file
 
 set -e
@@ -23,7 +23,7 @@ else
     echo "[ERROR] .mc-info not found. Run setup.sh first."
     exit 1
 fi
-SERVER_JAR="${SERVER_JAR:-$(ls -1 mc-launch.sh quilt-server-launch.jar paper.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)}"
+SERVER_JAR="${SERVER_JAR:-$(ls -1 mc-launch.sh quilt-server-launch.jar paper.jar folia.jar purpur.jar craftbukkit.jar spigot.jar fabric-server-*.jar 2>/dev/null | head -1)}"
 
 # Parse args
 NEW_VERSION=""
@@ -227,6 +227,47 @@ print(f'{build_num}|{url}')
     mcinfo_set jar "paper.jar"
     SERVER_JAR="paper.jar"
     echo "[OK] Paper updated to build $BUILD_NUM"
+}
+
+update_folia() {
+    local API="https://fill.papermc.io/v3/projects/folia"
+    local TARGET_VER="${NEW_VERSION:-$CURRENT_VERSION}"
+
+    echo "[*] Fetching Folia builds for $TARGET_VER..."
+    local BUILDS_JSON
+    BUILDS_JSON=$(curl -s -H "User-Agent: $USER_AGENT" "$API/versions/$TARGET_VER/builds")
+
+    local BUILD_URL
+    BUILD_URL=$(echo "$BUILDS_JSON" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+builds = data.get('builds', data) if isinstance(data, dict) else data
+if isinstance(builds, dict):
+    builds = builds.get('builds', [])
+stable = [b for b in builds if str(b.get('channel', '')).upper() == 'STABLE']
+if not stable:
+    stable = builds
+latest = stable[-1] if stable else builds[-1]
+build_num = latest.get('build', '?')
+downloads = latest.get('downloads', {})
+url = downloads.get('server:default', {}).get('url', '')
+print(f'{build_num}|{url}')
+" 2>/dev/null)
+
+    local BUILD_NUM=$(echo "$BUILD_URL" | cut -d'|' -f1)
+    local JAR_URL=$(echo "$BUILD_URL" | cut -d'|' -f2)
+
+    if [ -z "$JAR_URL" ]; then
+        echo "[ERROR] Failed to get Folia download URL"
+        exit 1
+    fi
+
+    echo "[*] Downloading Folia build $BUILD_NUM..."
+    curl -fsSL -H "User-Agent: $USER_AGENT" -o "folia.jar" "$JAR_URL"
+    mcinfo_set version "$TARGET_VER"
+    mcinfo_set jar "folia.jar"
+    SERVER_JAR="folia.jar"
+    echo "[OK] Folia updated to build $BUILD_NUM"
 }
 
 update_purpur() {
@@ -446,6 +487,7 @@ update_quilt() {
 
 case "$SERVER_TYPE" in
     paper)  update_paper ;;
+    folia)  update_folia ;;
     purpur) update_purpur ;;
     fabric) update_fabric ;;
     forge) update_forge ;;

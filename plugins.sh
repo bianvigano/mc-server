@@ -26,6 +26,7 @@ fi
 # Map type to Modrinth loader name
 case "$SERVER_TYPE" in
     paper)   LOADER="paper" ;;
+    folia)   LOADER="paper" ;;  # folia uses paper plugins
     purpur)  LOADER="paper" ;;  # purpur works with paper plugins
     fabric)  LOADER="fabric" ;;
     *)       LOADER="paper" ;;
