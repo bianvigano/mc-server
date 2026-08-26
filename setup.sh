@@ -493,8 +493,8 @@ if isinstance(builds, dict):
 stable = [b for b in builds if str(b.get('channel', '')).upper() == 'STABLE']
 if not stable:
     stable = builds
-latest = stable[-1] if isinstance(stable, list) and stable else builds[-1]
-build_num = latest.get('build', '?')
+latest = stable[0] if isinstance(stable, list) and stable else builds[0]
+build_num = latest.get('id') or latest.get('build', '?')
 downloads = latest.get('downloads', {})
 url = downloads.get('server:default', {}).get('url', '')
 print(f'{build_num}|{url}')
@@ -552,8 +552,8 @@ if isinstance(builds, dict):
 stable = [b for b in builds if str(b.get('channel', '')).upper() == 'STABLE']
 if not stable:
     stable = builds
-latest = stable[-1] if isinstance(stable, list) and stable else builds[-1]
-build_num = latest.get('build', '?')
+latest = stable[0] if isinstance(stable, list) and stable else builds[0]
+build_num = latest.get('id') or latest.get('build', '?')
 downloads = latest.get('downloads', {})
 url = downloads.get('server:default', {}).get('url', '')
 print(f'{build_num}|{url}')
