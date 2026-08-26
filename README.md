@@ -2,12 +2,12 @@
 
 All-in-one Minecraft server setup. Downloads, installs, configures EULA, and generates launcher + backup + systemd service.
 
-Supports: **Bukkit**, **Spigot**, **Paper**, **Purpur**, **Fabric**
+Supports: **Bukkit**, **Spigot**, **Paper**, **Folia**, **Purpur**, **Fabric**, **Forge**, **NeoForge**, **Quilt**
 
 ## Features
 
 - Interactive setup with version list from API
-- Auto-download server jar from official APIs (PaperMC, PurpurMC, Fabric Meta, SpigotMC BuildTools)
+- Auto-download server jar from official APIs (PaperMC, PurpurMC, Fabric Meta, Forge/NeoForge Maven, Quilt, SpigotMC BuildTools)
 - Accept EULA automatically
 - `start.sh` — Universal launcher with interactive menu, direct run mode, backend auto-detect, auto port switch (moves to the next free port instead of killing processes), and multi-jar detection (pick jar from menu when multiple `.jar` files exist)
 - `start.sh config` — Read/set server.properties from CLI
@@ -69,8 +69,11 @@ Pilih server type:
   4) Folia    — Paper fork with regionized multithreading
   5) Purpur   — Paper + extra configurability
   6) Fabric   — Mod loader (mods, not plugins)
+  7) Forge    — Classic mod loader
+  8) NeoForge — Modern Forge fork for modded servers
+  9) Quilt    — Lightweight mod loader
 
-Pilih [1/2/3/4/5/6]: 4
+Pilih [1/2/3/4/5/6/7/8/9]: 5
 
 Nama directory [./purpur-server]: survival
 
@@ -87,7 +90,7 @@ Available versions:
 Ketik versi [latest = 26.1.2]: 1.21.4
 ```
 
-- Pilih server type (1-5)
+- Pilih server type (1-9)
 - Ketik nama directory (Enter = default)
 - Pilih versi dari list (Enter = latest)
 
@@ -153,7 +156,7 @@ AUTO_RESTART=true ./start.sh run
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--type` | *(interactive)* | Server type: `bukkit`, `spigot`, `paper`, `folia`, `purpur`, `fabric` |
+| `--type` | *(interactive)* | Server type: `bukkit`, `spigot`, `paper`, `folia`, `purpur`, `fabric`, `forge`, `neoforge`, `quilt` |
 | `--version` | latest | Minecraft version |
 | `--dir` | `./<type>-server` | Output directory |
 | `--build` | latest stable | Paper: specific build number |
@@ -187,6 +190,19 @@ AUTO_RESTART=true ./start.sh run
 - Rich mod ecosystem (Sodium, Lithium, etc.)
 - API: `meta.fabricmc.net/v2`
 
+### Forge
+- Classic mod loader
+- Mod ecosystem (requires Forge-specific mods)
+- API: `maven.minecraftforge.net`
+
+### NeoForge
+- Modern Forge fork for modded servers
+- API: `maven.neoforged.net`
+
+### Quilt
+- Lightweight mod loader (Fabric-compatible ecosystem)
+- API: `quiltmc.org`
+
 ## Files
 
 ```
@@ -209,7 +225,7 @@ After setup:
 ├── update.sh        # Server updater
 ├── plugins/         # Plugins directory
 ├── world/           # World data
-├── server.jar       # Paper/Folia/Purpur/Fabric jar
+├── server.jar       # Paper/Folia/Purpur/Fabric/Forge/NeoForge/Quilt jar (or mc-launch.sh)
 ├── .mc-info         # Server metadata + launcher config
 ├── eula.txt         # Auto-accepted
 └── server.properties
@@ -318,6 +334,18 @@ Updates the server jar only. World, config, and plugins are untouched.
 4. Accepts EULA
 5. Copies scripts; generates systemd service
 6. Cleans up installer jar
+
+**Forge/NeoForge:**
+1. Queries `maven.minecraftforge.net` / `maven.neoforged.net` for matching version
+2. Downloads installer jar
+3. Runs installer (`--installServer`)
+4. Generates `mc-launch.sh` wrapper
+5. Accepts EULA; copies scripts; generates systemd service
+
+**Quilt:**
+1. Downloads latest Quilt installer from `quiltmc.org`
+2. Runs installer to download Minecraft server + Quilt
+3. Accepts EULA; copies scripts; generates systemd service
 
 **Bukkit/Spigot:**
 1. Downloads SpigotMC BuildTools
