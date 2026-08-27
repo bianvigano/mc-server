@@ -639,72 +639,208 @@ do_console() {
 }
 
 # ═══════════════════════════════════════════
-#  Command: config — read/set/view server.properties
+#  Command: config — read/set/view server.properties OR .mc-info (RAM/backend/etc)
 # ═══════════════════════════════════════════
 do_config() {
     local PROP_FILE="server.properties"
-    if [ ! -f "$PROP_FILE" ]; then
-        echo "[ERROR] $PROP_FILE not found. Run server first to generate it."
-        exit 1
-    fi
+    local INFO_FILE=".mc-info"
+    
+    # Helper to decide which source based on key
+    is_mcinfo_key() {
+        case "$1" in
+            xms|xmx|backend|type|version|jar|auto_restart|java_flags|java_version|session_name|servers) return 0 ;;
+            *) return 1 ;;
+        esac
+    }
+
+    # Show all .mc-info + server.properties
+    show_all() {
+        echo "=== .mc-info (launcher config) ==="
+        if [ -f "$INFO_FILE" ]; then
+            cat "$INFO_FILE"
+        else
+            echo "[NOT FOUND] Run ./setup.sh or ./start.sh config init first"
+        fi
+        echo ""
+        echo "=== server.properties (Minecraft settings) ==="
+        grep -v '^#' "$PROP_FILE" | grep -v '^$' | sort
+    }
 
     case "${2:-}" in
         "")
-            # Show all properties
-            echo "=== server.properties ==="
-            grep -v '^#' "$PROP_FILE" | grep -v '^$' | sort
+            # Show both sections
+            show_all
             ;;
         list)
-            echo "=== server.properties ==="
-            grep -v '^#' "$PROP_FILE" | grep -v '^$' | sort
+            show_all
             ;;
         get)
             if [ -z "$3" ]; then
                 echo "Usage: $0 config get <key>"
+                echo "Keys from .mc-info: xms, xmx, backend, type, version, jar, auto_restart, java_flags"
+                echo "Keys from server.properties: server-port, gamemode, difficulty, max-players, motd, ..."
                 exit 1
             fi
-            grep -E "^${3}=" "$PROP_FILE" 2>/dev/null || echo "[NOT FOUND] $3"
+            KEY="$3"
+            # Priority: .mc-info keys first, then server.properties
+            if is_mcinfo_key "$KEY"; then
+                mcinfo_get "$KEY" 2>/dev/null || echo "[NOT FOUND] $KEY in .mc-info"
+            else
+                grep -E "^${KEY}=" "$PROP_FILE" 2>/dev/null || echo "[NOT FOUND] $KEY"
+            fi
             ;;
         set)
-            if [ -z "$3" ] || [ -z "$4" ]; then
+            # Support two syntaxes:
+            # 1) key=value single arg: ./start.sh config set xmx=4G
+            # 2) key val two args:    ./start.sh config set xmx 4G
+            if [ -n "$3" ] && [[ "$3" == *=* ]]; then
+                # Single arg mode: "key=value"
+                KEY="${3%%=*}"
+                VALUE="${3#*=}"
+                # Trim whitespace
+                KEY=$(echo "$KEY" | tr -d ' ')
+                VALUE=$(echo "$VALUE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            elif [ -z "$3" ] || [ -z "$4" ]; then
                 echo "Usage: $0 config set <key> <value>"
+                echo ""
+                echo "Supports two syntaxes:"
+                echo "  • key=value (single arg): $0 config set xmx=4G"
+                echo "  • key value   (two args): $0 config set xmx 4G"
+                echo ""
+                echo "Examples:"
+                echo "  $0 config set xmx=4G              # Max RAM to 4GB (.mc-info)"
+                echo "  $0 config set backend=screen      # Switch to screen backend"
+                echo "  $0 config set server-port=25566   # Server port (server.properties)"
+                echo "  $0 config set motd=\"Welcome!\"     # MOTD with spaces"
+                echo ""
+                echo "Available .mc-info keys: xms, xmx, backend, type, version, jar, auto_restart, java_flags, session_name"
+                echo "Available server.properties keys: server-port, gamemode, difficulty, max-players, motd, online-mode, pvp, ..."
                 exit 1
-            fi
-            local KEY="$3"
-            shift 3
-            local VALUE="$*"
-
-            if grep -qE "^${KEY}=" "$PROP_FILE"; then
-                sed -i "s|^${KEY}=.*|${KEY}=${VALUE}|" "$PROP_FILE"
             else
-                echo "${KEY}=${VALUE}" >> "$PROP_FILE"
+                # Two arg mode: key + value separately
+                KEY="$3"
+                shift 3
+                VALUE="$*"
+                # Trim whitespace
+                KEY=$(echo "$KEY" | tr -d ' ')
+                VALUE=$(echo "$VALUE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
             fi
-            echo "[OK] ${KEY}=${VALUE}"
-
-            # Notify running server
-            if is_running; then
-                send_cmd "reload"
-                echo "[*] Server reload sent."
+            
+            if is_mcinfo_key "$KEY"; then
+                # Save to .mc-info
+                if [ -f "$INFO_FILE" ]; then
+                    # Update existing line
+                    if grep -qE "^${KEY}=" "$INFO_FILE"; then
+                        sed -i "s|^${KEY}=.*|${KEY}=${VALUE}|" "$INFO_FILE"
+                    else
+                        # Append if missing
+                        echo "${KEY}=${VALUE}" >> "$INFO_FILE"
+                    fi
+                    echo "[OK] ${KEY}=${VALUE} (saved to .mc-info)"
+                    # Refresh runtime
+                    refresh_runtime_from_mcinfo
+                    echo "[OK] Runtime config updated."
+                else
+                    echo "[ERROR] .mc-info not found. Create via: ./start.sh config init"
+                    exit 1
+                fi
+            else
+                # Save to server.properties
+                if [ ! -f "$PROP_FILE" ]; then
+                    echo "[ERROR] $PROP_FILE not found. Run server first."
+                    exit 1
+                fi
+                if grep -qE "^${KEY}=" "$PROP_FILE"; then
+                    sed -i "s|^${KEY}=.*|${KEY}=${VALUE}|" "$PROP_FILE"
+                else
+                    echo "${KEY}=${VALUE}" >> "$PROP_FILE"
+                fi
+                echo "[OK] ${KEY}=${VALUE} (saved to server.properties)"
+                
+                # Notify running server
+                if is_running; then
+                    send_cmd "reload"
+                    echo "[*] Server reload sent."
+                fi
             fi
             ;;
-        help)
-            echo "Usage: $0 config [list|get|set] [key] [value]"
-            echo ""
-            echo "Examples:"
-            echo "  $0 config                           # Show all"
-            echo "  $0 config get server-port            # Read one"
-            echo "  $0 config set server-port 25566      # Set value"
-            echo "  $0 config set motd \"My Server\"       # Set with spaces"
-            echo ""
-            echo "Common keys:"
-            echo "  server-port, gamemode, difficulty, max-players,"
-            echo "  motd, online-mode, pvp, view-distance, level-seed"
+        init)
+            # Initialize .mc-info if missing
+            if [ -f "$INFO_FILE" ]; then
+                echo "[OK] .mc-info already exists."
+                exit 0
+            fi
+            echo "Creating .mc-info with current values..."
+            cat > "$INFO_FILE" <<EOF
+type=${SERVER_TYPE:-unknown}
+version=${MC_VERSION:-latest}
+jar=${SERVER_JAR:-server.jar}
+backend=${BACKEND:-$(detect_backend)}
+xms=${JAVA_XMS:-1G}
+xmx=${JAVA_XMX:-2G}
+auto_restart=${AUTO_RESTART:-false}
+java_flags=${JAVA_FLAGS:-}
+EOF
+            echo "[OK] .mc-info created with default values."
+            refresh_runtime_from_mcinfo
+            ;;
+        help|--help|-h)
+            do_config_help
+            ;;
+        help-)
+            do_config_help
             ;;
         *)
-            # Treat as key shorthand: ./start.sh config server-port
-            grep -E "^${2}=" "$PROP_FILE" 2>/dev/null || echo "[NOT FOUND] $2"
+            # Try shorthand: ./start.sh config server-port → get
+            KEY="$2"
+            if is_mcinfo_key "$KEY"; then
+                mcinfo_get "$KEY" 2>/dev/null || echo "[NOT FOUND] $KEY in .mc-info"
+            else
+                grep -E "^${KEY}=" "$PROP_FILE" 2>/dev/null || echo "[NOT FOUND] $KEY"
+            fi
             ;;
     esac
+}
+
+do_config_help() {
+    echo "Usage: $0 config [list|get|set|init|help] [options]"
+    echo ""
+    echo "Config split into 2 sources:"
+    echo "  • .mc-info → launcher defaults (RAM, backend, auto-restart, etc.)"
+    echo "  • server.properties → Minecraft settings (port, difficulty, etc.)"
+    echo ""
+    echo "Commands:"
+    echo "  $0 config               Show all config"
+    echo "  $0 config list          Show all config"
+    echo "  $0 config get <key>     Read one property"
+    echo "  $0 config set <key=value>  Set one property"
+    echo "  $0 config init          Create .mc-info with defaults"
+    echo "  $0 config help          Show this help"
+    echo ""
+    echo ".mc-info keys (launcher):"
+    echo "  xms=<GB>    Min Java heap (e.g., 1G, 2G)"
+    echo "  xmx=<GB>    Max Java heap (e.g., 2G, 4G, 8G)"
+    echo "  backend=tmux|screen|nohup  Launcher backend"
+    echo "  auto_restart=true|false     Auto-restart after crash"
+    echo "  type=folia|paper|...        Server type (read-only)"
+    echo "  version=1.21.4              Minecraft version"
+    echo ""
+    echo "server.properties keys (Minecraft):"
+    echo "  server-port=25565   Game port"
+    echo "  motd=\"My Server\"    Server name display"
+    echo "  gamemode=survival  Game mode"
+    echo "  difficulty=hard     Difficulty level"
+    echo "  max-players=20      Player cap"
+    echo "  ... plus many others"
+    echo ""
+    echo "Examples:"
+    echo "  $0 config set xmx=4G              # Increase RAM to 4GB (saved to .mc-info)"
+    echo "  $0 config set backend=screen      # Switch to screen backend"
+    echo "  $0 config set server-port=25566   # Change game port (triggers reload)"
+    echo "  $0 config set motd=\"Hello World\"  # Update MOTD"
+    echo "  $0 config init                    # Create .mc-info if missing"
+    echo ""
+    echo "Note: For interactive RAM change, use: $0 config init -> then edit manually or run $0 start for menu."
 }
 
 # ═══════════════════════════════════════════
@@ -976,9 +1112,15 @@ print_usage() {
     echo "  new <nama>         Bikin instance baru (world & port sendiri)"
     echo ""
     echo "Config:"
-    echo "  config             Show all properties"
-    echo "  config get <key>   Read a property"
-    echo "  config set <key> <val>  Set a property"
+    echo "  config              Show all .mc-info + server.properties"
+    echo "  config get <key>    Read one property (.mc-info or server.properties)"
+    echo "  config set <key=val> Set property (RAM: xmx/xms | Minecraft: port/motd/etc)"
+    echo "  config init         Create .mc-info with default values if missing"
+    echo "  config help         Show detailed help for config command"
+    echo ""
+    echo "Quick RAM examples:"
+    echo "  ./start.sh config set xmx=4G      # Change Max RAM to 4GB permanently"
+    echo "  ./start.sh config set backend=screen  # Switch to screen launcher"
     echo ""
     echo "Monitoring:"
     echo "  stats              RAM, PID, threads, RCON info"
@@ -1052,23 +1194,37 @@ show_menu() {
             5) do_console ;;
             6)
                 echo "Config menu:"
-                echo "  a) Lihat semua properti"
-                echo "  b) Ambil nilai properti"
-                echo "  c) Set properti"
-                echo "  d) Bantuan"
-                read -p "Pilih [a-d]: " subc
+                echo "  a) Lihat semua (.mc-info + server.properties)"
+                echo "  b) Baca nilai satu property"
+                echo "  c) Set nilai (RAM: xmx/xms | Minecraft: server-port/motd/difficulty/etc)"
+                echo "  d) Inisialisasi .mc-info jika belum ada"
+                echo "  e) Bantuan lengkap"
+                read -p "Pilih [a-e]: " subc
                 case "$subc" in
                     a) do_config ;;
                     b)
+                        echo "Ketik key dari .mc-info atau server.properties:"
+                        echo "  mcinfo-keys: xms, xmx, backend, auto_restart, java_flags, session_name"
+                        echo "  prop-keys:   server-port, motd, gamemode, difficulty, max-players, online-mode, pvp"
                         read -p "Key: " key
                         do_config get "$key"
                         ;;
                     c)
-                        read -p "Key: " key
-                        read -p "Value: " val
-                        do_config set "$key" "$val"
+                        echo "Format: key=value"
+                        echo "Contoh: xmx=4G           # Ubah Max RAM ke 4GB (saves to .mc-info)"
+                        echo "        backend=screen   # Ubah launcher backend"
+                        echo "        server-port=25566  # Ubah game port (triggers reload)"
+                        read -p "Key=Value: " kv
+                        if [[ "$kv" == *=* ]]; then
+                            do_config set "$kv"
+                        else
+                            echo "[ERROR] Format harus key=value (contoh: xmx=4G)"; exit 1
+                        fi
                         ;;
-                    d) do_config help ;;
+                    d)
+                        do_config init
+                        ;;
+                    e) do_config help ;;
                     *) echo "Pilihan tidak valid." ;;
                 esac
                 read -p "Tekan Enter untuk lanjut..." ;;
