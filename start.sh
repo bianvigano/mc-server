@@ -728,9 +728,12 @@ do_config() {
                 VALUE=$(echo "$VALUE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
             fi
 
-            # Alias: ram → xmx (user-friendly)
+            # Alias: ram → xmx (user-friendly), AND set xms to same value
+            # so both min & max RAM are equal (recommended for MC servers)
+            SET_BOTH=0
             if [ "$KEY" = "ram" ]; then
                 KEY="xmx"
+                SET_BOTH=1
             fi
             
             if is_mcinfo_key "$KEY"; then
@@ -744,6 +747,15 @@ do_config() {
                         echo "${KEY}=${VALUE}" >> "$INFO_FILE"
                     fi
                     echo "[OK] ${KEY}=${VALUE} (saved to .mc-info)"
+                    # If ram= alias used, also set xms to the same value
+                    if [ "$SET_BOTH" = "1" ]; then
+                        if grep -qE "^xms=" "$INFO_FILE"; then
+                            sed -i "s|^xms=.*|xms=${VALUE}|" "$INFO_FILE"
+                        else
+                            echo "xms=${VALUE}" >> "$INFO_FILE"
+                        fi
+                        echo "[OK] xms=${VALUE} (saved to .mc-info, matched with xmx)"
+                    fi
                     # Refresh runtime
                     refresh_runtime_from_mcinfo
                     echo "[OK] Runtime config updated."
@@ -827,7 +839,7 @@ do_config_help() {
     echo "  $0 config help          Show this help"
     echo ""
     echo ".mc-info keys (launcher):"
-    echo "  ram=<GB>    Max RAM alias xmx (e.g., 2G, 4G, 8G)  [easiest]"
+    echo "  ram=<GB>    Set BOTH xms & xmx to same value  [easiest]"
     echo "  xms=<GB>    Min Java heap (e.g., 1G, 2G)"
     echo "  xmx=<GB>    Max Java heap (e.g., 2G, 4G, 8G)"
     echo "  backend=tmux|screen|nohup  Launcher backend"
@@ -844,8 +856,8 @@ do_config_help() {
     echo "  ... plus many others"
     echo ""
     echo "Examples:"
-    echo "  $0 config set ram=5G               # Quick RAM change (alias for xmx=5G)"
-    echo "  $0 config set xmx=4G              # Increase Max RAM to 4GB (saved to .mc-info)"
+    echo "  $0 config set ram=5G               # Set BOTH xms & xmx to 5GB (recommended)"
+    echo "  $0 config set xmx=4G              # Increase Max RAM to 4GB only"
     echo "  $0 config set xms=2G              # Set Min RAM to 2GB"
     echo "  $0 config set backend=screen      # Switch to screen backend"
     echo "  $0 config set server-port=25566   # Change game port (triggers reload)"
@@ -1131,8 +1143,8 @@ print_usage() {
     echo "  config help         Show detailed help for config command"
     echo ""
     echo "Quick RAM examples:"
-    echo "  ./start.sh config set ram=5G       # Change RAM to 5GB permanently (alias xmx)"
-    echo "  ./start.sh config set xmx=4G      # Change Max RAM to 4GB permanently"
+    echo "  ./start.sh config set ram=5G       # Set BOTH xms & xmx to 5GB (recommended)"
+    echo "  ./start.sh config set xmx=4G      # Change Max RAM to 4GB only"
     echo "  ./start.sh config set backend=screen  # Switch to screen launcher"
     echo ""
     echo "Monitoring:"
