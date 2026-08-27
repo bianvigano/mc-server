@@ -648,7 +648,7 @@ do_config() {
     # Helper to decide which source based on key
     is_mcinfo_key() {
         case "$1" in
-            xms|xmx|backend|type|version|jar|auto_restart|java_flags|java_version|session_name|servers) return 0 ;;
+            ram|xms|xmx|backend|type|version|jar|auto_restart|java_flags|java_version|session_name|servers) return 0 ;;
             *) return 1 ;;
         esac
     }
@@ -677,11 +677,13 @@ do_config() {
         get)
             if [ -z "$3" ]; then
                 echo "Usage: $0 config get <key>"
-                echo "Keys from .mc-info: xms, xmx, backend, type, version, jar, auto_restart, java_flags"
+                echo "Keys from .mc-info: ram (alias xmx), xms, xmx, backend, type, version, jar, auto_restart, java_flags"
                 echo "Keys from server.properties: server-port, gamemode, difficulty, max-players, motd, ..."
                 exit 1
             fi
             KEY="$3"
+            # Alias: ram → xmx
+            [ "$KEY" = "ram" ] && KEY="xmx"
             # Priority: .mc-info keys first, then server.properties
             if is_mcinfo_key "$KEY"; then
                 mcinfo_get "$KEY" 2>/dev/null || echo "[NOT FOUND] $KEY in .mc-info"
@@ -724,6 +726,11 @@ do_config() {
                 # Trim whitespace
                 KEY=$(echo "$KEY" | tr -d ' ')
                 VALUE=$(echo "$VALUE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            fi
+
+            # Alias: ram → xmx (user-friendly)
+            if [ "$KEY" = "ram" ]; then
+                KEY="xmx"
             fi
             
             if is_mcinfo_key "$KEY"; then
@@ -793,6 +800,8 @@ EOF
         *)
             # Try shorthand: ./start.sh config server-port → get
             KEY="$2"
+            # Alias: ram → xmx
+            [ "$KEY" = "ram" ] && KEY="xmx"
             if is_mcinfo_key "$KEY"; then
                 mcinfo_get "$KEY" 2>/dev/null || echo "[NOT FOUND] $KEY in .mc-info"
             else
@@ -818,6 +827,7 @@ do_config_help() {
     echo "  $0 config help          Show this help"
     echo ""
     echo ".mc-info keys (launcher):"
+    echo "  ram=<GB>    Max RAM alias xmx (e.g., 2G, 4G, 8G)  [easiest]"
     echo "  xms=<GB>    Min Java heap (e.g., 1G, 2G)"
     echo "  xmx=<GB>    Max Java heap (e.g., 2G, 4G, 8G)"
     echo "  backend=tmux|screen|nohup  Launcher backend"
@@ -834,7 +844,9 @@ do_config_help() {
     echo "  ... plus many others"
     echo ""
     echo "Examples:"
-    echo "  $0 config set xmx=4G              # Increase RAM to 4GB (saved to .mc-info)"
+    echo "  $0 config set ram=5G               # Quick RAM change (alias for xmx=5G)"
+    echo "  $0 config set xmx=4G              # Increase Max RAM to 4GB (saved to .mc-info)"
+    echo "  $0 config set xms=2G              # Set Min RAM to 2GB"
     echo "  $0 config set backend=screen      # Switch to screen backend"
     echo "  $0 config set server-port=25566   # Change game port (triggers reload)"
     echo "  $0 config set motd=\"Hello World\"  # Update MOTD"
@@ -1114,11 +1126,12 @@ print_usage() {
     echo "Config:"
     echo "  config              Show all .mc-info + server.properties"
     echo "  config get <key>    Read one property (.mc-info or server.properties)"
-    echo "  config set <key=val> Set property (RAM: xmx/xms | Minecraft: port/motd/etc)"
+    echo "  config set <key=val> Set property (RAM: ram/xmx/xms | Minecraft: port/motd/etc)"
     echo "  config init         Create .mc-info with default values if missing"
     echo "  config help         Show detailed help for config command"
     echo ""
     echo "Quick RAM examples:"
+    echo "  ./start.sh config set ram=5G       # Change RAM to 5GB permanently (alias xmx)"
     echo "  ./start.sh config set xmx=4G      # Change Max RAM to 4GB permanently"
     echo "  ./start.sh config set backend=screen  # Switch to screen launcher"
     echo ""
