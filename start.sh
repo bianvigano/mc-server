@@ -1141,7 +1141,7 @@ print_usage() {
     echo "Menu:"
     echo "  menu               Show interactive menu"
     echo ""
-    echo "Env vars:"
+    echo "Environment variables (override for ONE run only; .mc-info is the permanent source):"
     echo "  JAVA_XMS          Min RAM               (default: 1G)"
     echo "  JAVA_XMX          Max RAM               (default: 2G)"
     echo "  JAVA_VERSION      Java version (8/11/17/21) (default: system)"
@@ -1151,6 +1151,11 @@ print_usage() {
     echo "  SESSION_NAME      Screen/tmux name      (default: minecraft, tersimpan di .mc-info)"
     echo "  FORCE_BACKEND     tmux|screen|nohup     (auto-detected)"
     echo "  WORLD_BACKUP_DIR  World backup location (default: ./world-backups)"
+    echo ""
+    echo "[TIP] Save permanently with config instead:"
+    echo "  ./start.sh config set xmx=4G      # Permanently use 4GB RAM"
+    echo "  ./start.sh config init            # Initialize .mc-info if missing"
+    echo ""
 }
 
 # ═══════════════════════════════════════════
