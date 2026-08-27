@@ -114,33 +114,71 @@ if [ -z "$SERVER_TYPE" ]; then
 
                 VERSIONS_JSON=$(curl -s -H "User-Agent: $USER_AGENT" "$API_URL")
 
-                # Parse versions — newest first
+                # Parse versions — newest first, expand family dict into full version list
                 VERSIONS=$(python3 -c "
-import sys, json
+import sys, json, re
+
+def ver_key(v):
+    # negated numeric parts (newest first on ascending sort); suffix after base (stable first)
+    base = re.split(r'[-+]', v)[0]
+    parts = [int(x) if x.isdigit() else 0 for x in base.split('.')]
+    while len(parts) < 4:
+        parts.append(0)
+    neg = [-x for x in parts]
+    suffix = re.findall(r'[-+](rc|pre|beta|alpha|snapshot)[-.]?(\d*)', v, re.I)
+    kind = 0
+    if suffix:
+        s = suffix[0][0].lower()
+        kind = {'pre': 1, 'beta': 2, 'alpha': 3, 'rc': 4, 'snapshot': 5}.get(s, 0)
+    num = int(suffix[0][1]) if suffix and suffix[0][1].isdigit() else 0
+    return (neg, kind, num)
+
 data = json.load(sys.stdin)
 versions = data.get('versions', data)
 if isinstance(versions, dict):
-    keys = list(versions.keys())
+    flat = [v for sub in versions.values() for v in sub]
 else:
-    keys = versions if isinstance(versions, list) else []
-# Reverse so newest is first
-for v in keys[::-1]:
+    flat = versions if isinstance(versions, list) else []
+flat = list(dict.fromkeys(flat))
+flat.sort(key=ver_key)
+for v in flat:
     print(v)
 " <<< "$VERSIONS_JSON" 2>/dev/null)
 
-                # Get current/latest from metadata
+                # Get current/latest from metadata (fallback: newest stable from sorted list)
                 LATEST_VER=$(python3 -c "
-import sys, json
+import sys, json, re
+
+def ver_key(v):
+    base = re.split(r'[-+]', v)[0]
+    parts = [int(x) if x.isdigit() else 0 for x in base.split('.')]
+    while len(parts) < 4:
+        parts.append(0)
+    neg = [-x for x in parts]
+    suffix = re.findall(r'[-+](rc|pre|beta|alpha|snapshot)[-.]?(\d*)', v, re.I)
+    kind = 0
+    if suffix:
+        s = suffix[0][0].lower()
+        kind = {'pre': 1, 'beta': 2, 'alpha': 3, 'rc': 4, 'snapshot': 5}.get(s, 0)
+    num = int(suffix[0][1]) if suffix and suffix[0][1].isdigit() else 0
+    return (neg, kind, num)
+
 data = json.load(sys.stdin)
 current = data.get('metadata', {}).get('current', '')
 if current:
     print(current)
 else:
     versions = data.get('versions', data)
-    if isinstance(versions, list):
-        print(versions[-1])
-    elif isinstance(versions, dict):
-        print(list(versions.keys())[0])
+    if isinstance(versions, dict):
+        flat = [v for sub in versions.values() for v in sub]
+    else:
+        flat = versions if isinstance(versions, list) else []
+    flat = list(dict.fromkeys(flat))
+    if flat:
+        flat.sort(key=ver_key)
+        print(flat[0])
+    else:
+        print('')
 " <<< "$VERSIONS_JSON" 2>/dev/null)
 
                 if [ -n "$VERSIONS" ]; then
