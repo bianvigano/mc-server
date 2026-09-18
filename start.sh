@@ -1,6 +1,6 @@
 #!/bin/bash
 # start.sh — Universal MC server launcher
-# Usage: ./start.sh {start|run|stop|restart|status|console|config|stats|world|send|rename|new|plugins|mcinfo|menu}
+# Usage: ./start.sh {start|run|stop|restart|status|console|config|stats|world|send|rename|new|port|plugins|mcinfo|menu}
 # Auto-detects: tmux > screen > nohup fallback
 
 set -e
@@ -191,8 +191,23 @@ find_free_port() {
     return 1
 }
 
+# Tulis server-port ke server.properties (buat file kalau belum ada).
+# Dipakai oleh: port set, config set port/server-port, auto_switch_port.
+set_server_port() {
+    local NEWPORT="$1"
+    if [ -f server.properties ]; then
+        if grep -qE '^server-port=' server.properties; then
+            sed -i "s|^server-port=.*|server-port=${NEWPORT}|" server.properties
+        else
+            printf 'server-port=%s\n' "$NEWPORT" >> server.properties
+        fi
+    else
+        printf 'server-port=%s\n' "$NEWPORT" > server.properties
+    fi
+}
+
 # ponytail: port bergeser permanen di server.properties; kalau port lama mau
-# dipakai lagi, ubah manual via ./start.sh config set server-port 25565
+# dipakai lagi, ubah manual via: ./start.sh port set 25565
 auto_switch_port() {
     local PORT
     PORT=$(get_port)
@@ -205,12 +220,72 @@ auto_switch_port() {
         echo "[ERROR] Tidak ada port bebas setelah ${PORT}. Ubah manual: ./start.sh config set server-port <port>"
         return 1
     }
-    if [ -f server.properties ]; then
-        sed -i "s|^server-port=.*|server-port=${NEWPORT}|" server.properties
-    else
-        printf 'server-port=%s\n' "$NEWPORT" > server.properties
-    fi
+    set_server_port "$NEWPORT"
     echo "[!] Port ${PORT} sudah dipakai. Server ini pindah ke port ${NEWPORT} (disimpan di server.properties)."
+}
+
+# ═══════════════════════════════════════════
+#  Command: port — lihat / ubah game port
+#  Sumber kebenaran: server.properties (dibaca MC + auto_switch_port).
+#  ponytail: port TIDAK disalin ke .mc-info — cuma 1 tempat simpan,
+#  menghindari port=.mc-info vs server.properties terpisah. Tetap
+#  tampil di `config`, `status`, dan menu.
+# ═══════════════════════════════════════════
+port_is_busy() {
+    lsof -ti :"$1" >/dev/null 2>&1
+}
+
+do_port() {
+    local P NEWPORT
+    P="$(get_port)"
+    P="${P:-25565}"
+    case "${2:-}" in
+        ""|get|status)
+            echo "Port: $P"
+            if is_running; then
+                echo "Status: server jalan (port aktif)"
+            elif port_is_busy "$P"; then
+                echo "Status: sibuk (dipakai proses lain)"
+            else
+                echo "Status: bebas"
+            fi
+            echo ""
+            echo "Ubah port: $0 port set <1-65535>"
+            ;;
+        set)
+            if [ -z "$3" ]; then
+                echo "Usage: $0 port set <port>"
+                echo "Contoh: $0 port set 25566"
+                exit 1
+            fi
+            if ! [[ "$3" =~ ^[0-9]+$ ]]; then
+                echo "[ERROR] Port tidak valid: $3 (harus angka 1-65535)"
+                exit 1
+            fi
+            NEWPORT=$((10#$3))
+            if [ "$NEWPORT" -lt 1 ] || [ "$NEWPORT" -gt 65535 ]; then
+                echo "[ERROR] Port di luar rentang: $NEWPORT (harus 1-65535)"
+                exit 1
+            fi
+            if [ "$NEWPORT" -eq "$P" ] 2>/dev/null; then
+                echo "[*] Port sudah: $P"
+                return 0
+            fi
+            set_server_port "$NEWPORT"
+            echo "[OK] server-port=$NEWPORT (disimpan ke server.properties)"
+            if is_running; then
+                echo "[WARN] Server sedang jalan. Port baru berlaku setelah restart:"
+                echo "         $0 restart"
+            elif port_is_busy "$NEWPORT"; then
+                echo "[WARN] Port $NEWPORT dipakai proses lain. Saat start, auto-switch"
+                echo "       akan menggeser ke port bebas terdekat."
+            fi
+            ;;
+        *)
+            echo "Usage: $0 port [get|status|set <port>]"
+            exit 1
+            ;;
+    esac
 }
 
 # ═══════════════════════════════════════════
@@ -682,8 +757,9 @@ do_config() {
                 exit 1
             fi
             KEY="$3"
-            # Alias: ram → xmx
+            # Alias: ram → xmx, port → server-port
             [ "$KEY" = "ram" ] && KEY="xmx"
+            [ "$KEY" = "port" ] && KEY="server-port"
             # Priority: .mc-info keys first, then server.properties
             if is_mcinfo_key "$KEY"; then
                 mcinfo_get "$KEY" 2>/dev/null || echo "[NOT FOUND] $KEY in .mc-info"
@@ -735,7 +811,16 @@ do_config() {
                 KEY="xmx"
                 SET_BOTH=1
             fi
-            
+            if [ "$KEY" = "port" ]; then
+                KEY="server-port"
+            fi
+
+            # Validasi port sebelum ditulis ke server.properties
+            if [ "$KEY" = "server-port" ] && ! [[ "$VALUE" =~ ^[0-9]+$ ]]; then
+                echo "[ERROR] server-port harus angka, dapat: $VALUE"
+                exit 1
+            fi
+
             if is_mcinfo_key "$KEY"; then
                 # Save to .mc-info
                 if [ -f "$INFO_FILE" ]; then
@@ -775,11 +860,16 @@ do_config() {
                     echo "${KEY}=${VALUE}" >> "$PROP_FILE"
                 fi
                 echo "[OK] ${KEY}=${VALUE} (saved to server.properties)"
-                
+
                 # Notify running server
                 if is_running; then
-                    send_cmd "reload"
-                    echo "[*] Server reload sent."
+                    if [ "$KEY" = "server-port" ]; then
+                        # ponytail: port tidak efektif via reload; butuh restart
+                        echo "[WARN] server-port berubah. Port baru berlaku setelah restart: $0 restart"
+                    else
+                        send_cmd "reload"
+                        echo "[*] Server reload sent."
+                    fi
                 fi
             fi
             ;;
@@ -812,8 +902,9 @@ EOF
         *)
             # Try shorthand: ./start.sh config server-port → get
             KEY="$2"
-            # Alias: ram → xmx
+            # Alias: ram → xmx, port → server-port
             [ "$KEY" = "ram" ] && KEY="xmx"
+            [ "$KEY" = "port" ] && KEY="server-port"
             if is_mcinfo_key "$KEY"; then
                 mcinfo_get "$KEY" 2>/dev/null || echo "[NOT FOUND] $KEY in .mc-info"
             else
@@ -848,6 +939,7 @@ do_config_help() {
     echo "  version=1.21.4              Minecraft version"
     echo ""
     echo "server.properties keys (Minecraft):"
+    echo "  port=25565          Game port (alias server-port)"
     echo "  server-port=25565   Game port"
     echo "  motd=\"My Server\"    Server name display"
     echo "  gamemode=survival  Game mode"
@@ -1134,6 +1226,7 @@ print_usage() {
     echo "  send <cmd>         Send command to server"
     echo "  rename <nama>      Ganti nama session (misal: minecraft1)"
     echo "  new <nama>         Bikin instance baru (world & port sendiri)"
+    echo "  port [get|set <p>] Lihat / ubah game port (server.properties)"
     echo ""
     echo "Config:"
     echo "  config              Show all .mc-info + server.properties"
@@ -1193,6 +1286,7 @@ show_menu() {
         echo "Server: $SERVER_TYPE"
         echo "Jar:    $JAR"
         echo "Backend: $BACKEND (session: $SESSION_NAME)"
+        echo "Port:    $(get_port)"
         echo "RAM:    $JAVA_XMS - $JAVA_XMX"
         echo "Java:   ${JAVA_VERSION:-system} ($JAVA_BIN)"
         echo "Java Flags: $JAVA_FLAGS"
@@ -1213,9 +1307,10 @@ show_menu() {
         echo "14) View/Edit .mc-info"
         echo "15) Ganti nama session"
         echo "16) Daftar nama server baru (misal: minecraft1)"
-        echo "17) Exit"
+        echo "17) Ganti port server"
+        echo "18) Exit"
         echo ""
-        read -p "Pilih opsi [1-17]: " choice
+        read -p "Pilih opsi [1-18]: " choice
         case "$choice" in
             1) do_start ;;
             2) do_stop ;;
@@ -1357,6 +1452,13 @@ show_menu() {
                 read -p "Tekan Enter untuk lanjut..."
                 ;;
             17)
+                read -rp "Port baru (saat ini: $(get_port)): " np
+                if [ -n "$np" ]; then
+                    do_port set "$np"
+                fi
+                read -p "Tekan Enter untuk lanjut..."
+                ;;
+            18)
                 echo "Keluar..."
                 break
                 ;;
@@ -1384,6 +1486,7 @@ else
         world)          do_world "$@" ;;
         send|cmd)       do_send "$@" ;;
         rename)         shift; set_session_name "${1:-}" ;;
+        port)           do_port "$@" ;;
         new)
             shift
             if [ -z "${1:-}" ]; then
