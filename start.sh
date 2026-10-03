@@ -1255,6 +1255,8 @@ print_usage() {
     echo "  plugins remove <slug>   Remove plugin"
     echo "  plugins list            List installed"
     echo "  plugins update          Update all"
+    echo "  update                  Cek pembaruan skrip dari GitHub Releases"
+    echo "  update pasang           Pasang pembaruan skrip dengan cadangan"
     echo ""
     echo "Menu:"
     echo "  menu               Show interactive menu"
@@ -1499,6 +1501,7 @@ else
             start_new_instance "$1"
             ;;
         plugins|plugin) shift; do_plugins "$@" ;;
+        update|perbarui) shift; exec python3 "$SCRIPT_DIR/updater.py" "$@" ;;
         mcinfo)         do_mcinfo ;;
         menu)           show_menu ;;
         *)

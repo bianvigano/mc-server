@@ -1,5 +1,19 @@
 # mc-server
 
+## Pembaruan skrip dari GitHub Releases
+
+- `./start.sh update`: cek rilis stabil terbaru.
+- `./start.sh update pasang`: pasang pembaruan skrip.
+- Alternatif langsung: `python3 updater.py cek` / `python3 updater.py pasang`.
+- `./update.sh` tetap untuk update JAR Minecraft, bukan skrip pengelola.
+
+Membutuhkan Python 3, Bash, dan akses GitHub. Hanya start.sh, setup.sh, backup.sh, plugins.sh, update.sh, docker.sh, dan updater.py yang diperbarui; world, JAR, plugin, server.properties, dan .mc-info tidak disentuh. Arsip harus lengkap dan skrip lolos validasi sebelum dipasang. Cadangan skrip lama: `.mc-update-backups/<waktu>/`. Versi terpasang: `.mc-tools-version`. Kegagalan pemasangan mengembalikan skrip lama. Perubahan lokal pada skrip dalam checkout Git menolak pemasangan agar tidak tertimpa.
+
+Untuk menerbitkan pembaruan, push perubahan lalu buat tag dan GitHub Release stabil di repository. Tag harus memuat seluruh skrip di atas. Updater menggunakan source archive otomatis GitHub; tidak membutuhkan asset tambahan. Draft/prerelease tidak digunakan. Jika belum ada Release, tampilkan kesalahan tanpa mengubah file; tidak ada fallback ke main.
+
+Tes tanpa jaringan: `python3 test_updater.py`.
+
+
 All-in-one Minecraft server setup. Downloads, installs, configures EULA, and generates launcher + backup + systemd service.
 
 Supports: **Bukkit**, **Spigot**, **Paper**, **Folia**, **Purpur**, **Fabric**, **Forge**, **NeoForge**, **Quilt**

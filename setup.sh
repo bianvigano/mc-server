@@ -884,7 +884,7 @@ download_quilt() {
 # ═══════════════════════════════════════════════
 copy_scripts() {
     local GITHUB_RAW="https://raw.githubusercontent.com/bianvigano/mc-server/main"
-    local SCRIPTS="start.sh backup.sh plugins.sh update.sh"
+    local SCRIPTS="start.sh backup.sh plugins.sh update.sh updater.py"
 
     for f in $SCRIPTS; do
         if [ -f "$SETUP_DIR/$f" ]; then
