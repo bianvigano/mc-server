@@ -2,7 +2,7 @@
 # update.sh — Update MC server jar without touching world/config/plugins
 # Usage: ./update.sh [--version 1.21.4]
 #
-# Supports: paper, folia, purpur, fabric, forge, neoforge, quilt
+# Supports: paper, folia, purpur, fabric, legacyfabric, forge, neoforge, quilt
 # Auto-detects type from .mc-info file
 
 set -e
@@ -50,6 +50,11 @@ echo "Type:    $SERVER_TYPE"
 echo "Current: $CURRENT_VERSION"
 echo "Jar:     $SERVER_JAR"
 echo ""
+
+if [ "$SERVER_TYPE" = "legacyfabric" ]; then
+    echo "[ERROR] Update LegacyFabric belum didukung. Backup dahulu, lalu setup.sh --type legacyfabric --version VERSION --dir DIR (server harus berhenti)."
+    exit 1
+fi
 
 # Check if server is running
 is_running() {

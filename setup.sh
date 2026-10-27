@@ -1,6 +1,7 @@
 #!/bin/bash
 # mc-server setup — All-in-one Minecraft server setup
-# Supports: fabric, folia, forge, neoforge, paper, purpur, quilt
+# Supports: fabric, legacyfabric, folia, forge, neoforge, paper, purpur, quilt
+# LegacyFabric targets old Minecraft versions and uses its own loader/API.
 # Usage: ./setup.sh --type paper --version 1.21.4
 #        ./setup.sh --type fabric
 #        ./setup.sh --type folia --version 1.21.4
@@ -18,6 +19,8 @@ INSTALL_DIR=""
 PAPER_BUILD=""
 FABRIC_LOADER=""
 FABRIC_INSTALLER=""
+LEGACYFABRIC_LOADER=""
+LEGACYFABRIC_INSTALLER=""
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 USER_AGENT="mc-server/1.0 (https://github.com/bianvigano/mc-server)"
 
@@ -32,16 +35,28 @@ while [[ $# -gt 0 ]]; do
         --build)      PAPER_BUILD="$2"; shift 2 ;;
         --fabric-loader)    FABRIC_LOADER="$2";    shift 2 ;;
         --fabric-installer) FABRIC_INSTALLER="$2"; shift 2 ;;
+        --legacyfabric-loader|--legacyfabric-installer)
+            if [[ $# -lt 2 || -z "$2" || "$2" == --* ]]; then
+                echo "Error: $1 requires a version"; exit 1
+            fi
+            if [ "$1" = "--legacyfabric-loader" ]; then
+                LEGACYFABRIC_LOADER="$2"
+            else
+                LEGACYFABRIC_INSTALLER="$2"
+            fi
+            shift 2 ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --type TYPE       Server type: bukkit, spigot, paper, folia, purpur, fabric, forge, neoforge, quilt (required)"
+            echo "  --type TYPE       Server type: bukkit, spigot, paper, folia, purpur, fabric, legacyfabric, forge, neoforge, quilt (required)"
             echo "  --version VER     Minecraft version (default: latest)"
             echo "  --dir DIR         Install directory (default: ./<type>-server)"
             echo "  --build NUM       Paper: specific build number"
             echo "  --fabric-loader   Fabric: specific loader version"
             echo "  --fabric-installer Fabric: specific installer version"
+            echo "  --legacyfabric-loader LegacyFabric: specific loader version"
+            echo "  --legacyfabric-installer LegacyFabric: specific installer version"
             echo ""
             echo "Examples:"
             echo "  $0 --type paper"
@@ -76,8 +91,9 @@ if [ -z "$SERVER_TYPE" ]; then
     echo "  7) Forge    — Classic mod loader"
     echo "  8) NeoForge — Modern Forge fork for modded servers"
     echo "  9) Quilt    — Lightweight mod loader"
+    echo "  10) LegacyFabric — Mod loader untuk Minecraft lama"
     echo ""
-    read -rp "Pilih [1/2/3/4/5/6/7/8/9]: " choice
+    read -rp "Pilih [1/2/3/4/5/6/7/8/9/10]: " choice
     case "$choice" in
         1) SERVER_TYPE="bukkit" ;;
         2) SERVER_TYPE="spigot" ;;
@@ -88,6 +104,7 @@ if [ -z "$SERVER_TYPE" ]; then
         7) SERVER_TYPE="forge" ;;
         8) SERVER_TYPE="neoforge" ;;
         9) SERVER_TYPE="quilt" ;;
+        10) SERVER_TYPE="legacyfabric" ;;
         *) echo "Invalid choice"; exit 1 ;;
     esac
 
@@ -194,6 +211,15 @@ else:
                 else
                     read -rp "Minecraft version [latest]: " MC_VERSION
                 fi
+                ;;
+            legacyfabric)
+                VERSIONS_JSON=$(curl -fsSL "https://meta.legacyfabric.net/v2/versions/game")
+                VERSIONS=$(python3 -c 'import json,sys; print("\n".join(x["version"] for x in json.load(sys.stdin) if x.get("stable")))' <<< "$VERSIONS_JSON")
+                [ -n "$VERSIONS" ] || { echo "Error: No LegacyFabric stable versions"; exit 1; }
+                echo "$VERSIONS"
+                LATEST_VER="${VERSIONS%%$'\n'*}"
+                read -rp "Ketik versi [latest = $LATEST_VER]: " VERSION_INPUT
+                MC_VERSION="${VERSION_INPUT:-$LATEST_VER}"
                 ;;
             fabric|quilt)
                 VERSIONS_JSON=$(curl -s "https://meta.fabricmc.net/v2/versions/game")
@@ -337,8 +363,8 @@ fi
 
 # Validate type
 case "$SERVER_TYPE" in
-    bukkit|spigot|paper|folia|purpur|fabric|forge|neoforge|quilt) ;;
-    *) echo "Error: --type must be bukkit|spigot|paper|folia|purpur|fabric|forge|neoforge|quilt"; exit 1 ;;
+    bukkit|spigot|paper|folia|purpur|fabric|legacyfabric|forge|neoforge|quilt) ;;
+    *) echo "Error: --type must be bukkit|spigot|paper|folia|purpur|fabric|legacyfabric|forge|neoforge|quilt"; exit 1 ;;
 esac
 
 INSTALL_DIR="${INSTALL_DIR:-./${SERVER_TYPE}-server}"
@@ -358,7 +384,7 @@ echo ""
 # ═══════════════════════════════════════════════
 detect_java() {
     if command -v java &>/dev/null; then
-        JAVA_VER=$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]*\).*/\1/')
+        JAVA_VER=$(java -version 2>&1 | python3 -c 'import re,sys; m=re.search(r"version \"(?:1\.)?(\d+)",sys.stdin.read()); print(m.group(1) if m else "")')
         echo "Java $JAVA_VER found"
     else
         echo "Error: Java not found. Install Java 17+ first."
@@ -643,6 +669,57 @@ print(versions[0] if isinstance(versions, list) else versions)
 # ═══════════════════════════════════════════════
 #  Download: Fabric
 # ═══════════════════════════════════════════════
+download_legacyfabric() {
+    local META="https://meta.legacyfabric.net/v2" GAMES LOADERS INSTALLERS SELECTION INSTALLER_URL
+    for VALUE in "$MC_VERSION" "$LEGACYFABRIC_LOADER" "$LEGACYFABRIC_INSTALLER"; do
+        if [[ -n "$VALUE" && ! "$VALUE" =~ ^[a-zA-Z0-9.+_-]+$ ]]; then
+            echo "Error: Invalid LegacyFabric version: $VALUE"; exit 1
+        fi
+    done
+    GAMES=$(curl -fsSL "$META/versions/game")
+    MC_VERSION=$(python3 -c '
+import json,sys
+rows=json.load(sys.stdin); target=sys.argv[1]
+if not target: target=next(x["version"] for x in rows if x.get("stable"))
+if target not in [x["version"] for x in rows]: sys.exit("Error: Unsupported LegacyFabric Minecraft version: " + target)
+print(target)
+' "$MC_VERSION" <<< "$GAMES")
+    LOADERS=$(curl -fsSL "$META/versions/loader/$MC_VERSION")
+    SELECTION=$(python3 -c '
+import json,sys
+rows=json.load(sys.stdin); target=sys.argv[1]
+rows=[x for x in rows if x["loader"]["version"] == target] if target else ([x for x in rows if x["loader"].get("stable")] or rows)
+if not rows: sys.exit("Error: Unsupported LegacyFabric loader")
+x=rows[0]; print(x["loader"]["version"], x["launcherMeta"].get("min_java_version",8))
+' "$LEGACYFABRIC_LOADER" <<< "$LOADERS")
+    read -r LEGACYFABRIC_LOADER MIN_JAVA <<< "$SELECTION"
+    INSTALLERS=$(curl -fsSL "$META/versions/installer")
+    SELECTION=$(python3 -c '
+import json,sys
+rows=json.load(sys.stdin); target=sys.argv[1]
+rows=[x for x in rows if x["version"] == target] if target else ([x for x in rows if x.get("stable")] or rows)
+if not rows: sys.exit("Error: Unsupported LegacyFabric installer")
+x=rows[0]; print(x["version"],x["url"])
+' "$LEGACYFABRIC_INSTALLER" <<< "$INSTALLERS")
+    read -r LEGACYFABRIC_INSTALLER INSTALLER_URL <<< "$SELECTION"
+    [[ "$INSTALLER_URL" == https://maven.legacyfabric.net/* ]] || { echo "Error: Unexpected installer URL"; exit 1; }
+    local MAJOR="$JAVA_VER"
+    if [ "$MAJOR" = 1 ]; then
+        MAJOR=$(java -version 2>&1 | python3 -c 'import re,sys; print(re.search(r"1\.(\d+)",sys.stdin.read())[1])')
+    fi
+    if (( MAJOR < MIN_JAVA )); then
+        echo "Error: LegacyFabric loader requires Java $MIN_JAVA+"; exit 1
+    fi
+    echo "  LegacyFabric: MC $MC_VERSION / loader $LEGACYFABRIC_LOADER / installer $LEGACYFABRIC_INSTALLER (Java $MIN_JAVA+)"
+    mkdir -p "$INSTALL_DIR"
+    curl -fL --progress-bar -o "$INSTALL_DIR/legacyfabric-installer.jar" "$INSTALLER_URL"
+    cd "$INSTALL_DIR"
+    java -jar legacyfabric-installer.jar server -mcversion "$MC_VERSION" -loader "$LEGACYFABRIC_LOADER" -downloadMinecraft
+    SERVER_JAR="fabric-server-launch.jar"
+    [ -s "$SERVER_JAR" ] || { echo "Error: LegacyFabric launcher not found"; exit 1; }
+    rm -f legacyfabric-installer.jar
+}
+
 download_fabric() {
     local META="https://meta.fabricmc.net/v2"
 
@@ -969,6 +1046,9 @@ case "$SERVER_TYPE" in
         SERVER_JAR=$(cat "$INSTALL_DIR/.fabric-jar-temp" 2>/dev/null || echo "")
         rm -f "$INSTALL_DIR/.fabric-jar-temp"
         ;;
+    legacyfabric)
+        download_legacyfabric
+        ;;
     forge)
         download_forge
         ;;
@@ -991,6 +1071,10 @@ type=$SERVER_TYPE
 version=$MC_VERSION
 jar=$SERVER_JAR
 EOF
+
+if [ "$SERVER_TYPE" = "legacyfabric" ]; then
+    printf 'loader=%s\ninstaller=%s\n' "$LEGACYFABRIC_LOADER" "$LEGACYFABRIC_INSTALLER" >> .mc-info
+fi
 
 # Copy standalone scripts + generate systemd
 copy_scripts

@@ -16,7 +16,7 @@ Tes tanpa jaringan: `python3 test_updater.py`.
 
 All-in-one Minecraft server setup. Downloads, installs, configures EULA, and generates launcher + backup + systemd service.
 
-Supports: **Bukkit**, **Spigot**, **Paper**, **Folia**, **Purpur**, **Fabric**, **Forge**, **NeoForge**, **Quilt**
+Supports: **Bukkit**, **Spigot**, **Paper**, **Folia**, **Purpur**, **Fabric**, **LegacyFabric**, **Forge**, **NeoForge**, **Quilt**
 
 ## Features
 
@@ -63,9 +63,30 @@ Or with flags:
 ./setup.sh --type purpur --version 1.21.4
 ./setup.sh --type folia --version 1.21.4
 ./setup.sh --type fabric --version 1.21.4
+./setup.sh --type legacyfabric --version 1.8.9
 ./setup.sh --type bukkit --version 1.21.4
 ./setup.sh --type spigot --version 1.21.4
 ```
+
+## LegacyFabric (Minecraft lama)
+
+```bash
+./setup.sh --type legacyfabric --version 1.8.9 --dir ./legacyfabric-server
+# Opsional: pin versi dari API resmi, terpisah dari opsi Fabric modern
+./setup.sh --type legacyfabric --version 1.8.9 --legacyfabric-loader 0.20.1 --legacyfabric-installer 1.1.1
+cd legacyfabric-server
+./start.sh run
+```
+
+Menu menyediakan pilihan 10 dan daftar versi dari `https://meta.legacyfabric.net/v2/versions/game`.
+Tanpa `--version`, dipilih rilis stabil pertama API LegacyFabric (bukan Minecraft modern).
+Loader dan installer divalidasi melalui API resmi; versi tidak didukung ditolak.
+Java minimum mengikuti metadata loader (umumnya Java 8+, loader terbaru dapat berbeda).
+Gunakan Java yang kompatibel dengan mod; launcher tidak membatasi metaspace LegacyFabric.
+`.mc-info` menyimpan type, version, jar, loader, dan installer.
+`update.sh` dan `docker.sh` menolak LegacyFabric secara eksplisit: updater dan image Docker belum diintegrasikan.
+Untuk mengganti loader/versi: hentikan server, backup dahulu, lalu jalankan setup lagi ke direktori yang sama.
+Tes offline: `python3 test_legacyfabric.py`.
 
 ## Interactive Mode
 
@@ -340,6 +361,11 @@ Updates the server jar only. World, config, and plugins are untouched.
 3. Accepts EULA
 4. Copies start.sh, backup.sh, plugins.sh, update.sh from repo or GitHub
 5. Generates systemd service
+
+**LegacyFabric:**
+1. Queries `meta.legacyfabric.net/v2` for supported game, loader, and installer metadata
+2. Downloads the official installer and runs its `server -mcversion -loader -downloadMinecraft` CLI
+3. Uses the launcher metadata Java minimum; no restrictive metaspace cap is added
 
 **Fabric:**
 1. Queries `meta.fabricmc.net` for latest stable loader + installer

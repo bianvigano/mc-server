@@ -101,6 +101,9 @@ set_java_flags_by_type() {
         paper|folia|purpur)
             JAVA_FLAGS="$DEFAULT_JAVA_FLAGS"
             ;;
+        legacyfabric)
+            JAVA_FLAGS="$DEFAULT_JAVA_FLAGS"
+            ;;
         fabric|quilt)
             JAVA_FLAGS="-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 -XX:+DisableExplicitGC -XX:MaxMetaspaceSize=256M"
             ;;
